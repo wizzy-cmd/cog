@@ -48,6 +48,30 @@ export function createDatabase(dbPath: string): Database.Database {
       status TEXT NOT NULL CHECK(status IN ('active', 'paused', 'stopped', 'expired')),
       fire_history TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS inbox_messages (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      agent_name TEXT NOT NULL,
+      message TEXT NOT NULL,
+      priority TEXT NOT NULL CHECK(priority IN ('low', 'normal', 'high', 'urgent')),
+      tags TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      read_at TEXT,
+      tab_id TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS team_proposals (
+      id TEXT PRIMARY KEY,
+      proposed_by TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      agents TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending', 'approved', 'rejected', 'expired')),
+      created_at TEXT NOT NULL,
+      resolved_at TEXT,
+      feedback TEXT,
+      tab_id TEXT
+    );
   `)
 
   // Migrations for existing DBs — safe to fail if column already exists

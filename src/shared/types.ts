@@ -315,6 +315,61 @@ export interface InfoEntry {
   tabId?: string
 }
 
+// ── Inbox: orchestrator → user direct messages ───────────────────────────────
+// A separate channel from the chat stream so messages targeted at the human
+// don't get buried in inter-agent crosstalk during long unattended runs.
+
+export type InboxPriority = 'low' | 'normal' | 'high' | 'urgent'
+
+export interface InboxMessage {
+  id: string
+  agentId: string
+  agentName: string
+  message: string
+  priority: InboxPriority
+  tags: string[]
+  createdAt: string
+  readAt?: string
+  tabId?: string
+}
+
+// User-configurable threshold for native OS notifications. 'none' disables
+// pop-ups entirely; otherwise pops for any message at or above the threshold.
+export type NotificationThreshold = 'none' | 'low' | 'normal' | 'high' | 'urgent'
+
+// ── Team proposals: orchestrator-suggested teams pending user confirmation ───
+// The orchestrator drafts a team via MCP, which lands here as 'pending'. The
+// renderer surfaces a confirmation modal; on approve, agents spawn through the
+// existing agent:spawn IPC. Per-agent checkboxes let the user trim the team
+// before approving.
+
+export interface ProposedAgent {
+  name: string
+  cli: string
+  model?: string
+  role: string
+  ceoNotes: string
+  autoMode: boolean
+  shell?: AgentConfig['shell']
+  skills?: string[]
+  providerUrl?: string
+  theme?: AgentTheme
+}
+
+export type TeamProposalStatus = 'pending' | 'approved' | 'rejected' | 'expired'
+
+export interface TeamProposal {
+  id: string
+  proposedBy: string       // orchestrator agent name
+  summary: string          // human-readable description of the team's purpose
+  agents: ProposedAgent[]
+  status: TeamProposalStatus
+  createdAt: string
+  resolvedAt?: string
+  feedback?: string        // user's optional reason on reject
+  tabId?: string           // workspace tab the team should land in
+}
+
 export interface RecentProject {
   path: string
   name: string
