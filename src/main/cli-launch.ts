@@ -149,8 +149,13 @@ export function buildCliLaunchCommands(
   }
 
   if (cliBase === 'kimi') {
+    // NOTE: kimi-cli's `--model` flag silently resets the authenticated
+    // session and shows "Model: not set, send /login" regardless of the
+    // value passed (even valid model names like "Kimi-k2.6"). Verified
+    // 2026-05-02 with kimi-cli installed via uv. So we deliberately omit
+    // --model and let kimi load its cached choice. Users can switch the
+    // model from inside kimi via the `/model` command.
     let cmd = `kimi --mcp-config-file "${mcpConfigArg}"`
-    if (safeModel) cmd += ` --model ${safeModel}`
     if (config.autoMode) cmd += ' --yolo'
     return [cmd]
   }

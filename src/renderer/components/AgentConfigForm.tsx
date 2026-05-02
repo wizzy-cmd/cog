@@ -42,11 +42,10 @@ export const CLI_MODELS: Record<string, { label: string; value: string }[]> = {
     { label: 'GPT-4.1 mini', value: 'gpt-4.1-mini' },
   ],
   kimi: [
-    { label: 'Default (cached choice)', value: '' },
-    { label: 'Kimi K2.6 (latest)', value: 'Kimi-k2.6' },
-    { label: 'Kimi K2.5', value: 'Kimi-k2.5' },
-    { label: 'Kimi K2 Thinking Turbo', value: 'kimi-k2-thinking-turbo' },
-    { label: 'Moonshot v1 8K', value: 'moonshot-v1-8k' },
+    // kimi-cli's --model flag is broken — passing any value resets auth.
+    // Only the "default" (no flag) option works; switch models from inside
+    // kimi via `/model`. See cli-launch.ts kimi branch for the rationale.
+    { label: 'Default (use /model inside kimi to switch)', value: '' },
   ],
   gemini: [
     { label: 'Default', value: '' },
