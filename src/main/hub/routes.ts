@@ -5,8 +5,10 @@ import type { AgentRegistry } from './agent-registry'
 import type { MessageRouter } from './message-router'
 import type { Pinboard } from './pinboard'
 import type { InfoChannel } from './info-channel'
+import type { InboxChannel } from './inbox-channel'
+import type { ProposalsChannel } from './proposals-channel'
 import type { GroupManager } from './group-manager'
-import type { AgentConfig } from '../../shared/types'
+import type { AgentConfig, InboxPriority } from '../../shared/types'
 import type { MessageStore } from '../db/message-store'
 
 export type OutputAccessor = (agentName: string, lines: number) => string[] | null
@@ -19,7 +21,9 @@ export function createRoutes(
   infoChannel: InfoChannel,
   messageStoreRef: { store: MessageStore | null } = { store: null },
   projectPathRef: { path: string | null } = { path: null },
-  groupManager?: GroupManager
+  groupManager?: GroupManager,
+  inboxChannel?: InboxChannel,
+  proposalsChannel?: ProposalsChannel
 ): Router {
   const router = Router()
 
@@ -238,6 +242,110 @@ export function createRoutes(
     } catch (err: any) {
       res.status(400).json({ error: 'Update failed' })
     }
+  })
+
+  // --- Inbox routes ---
+  // Orchestrator-only post; gating is enforced here so other agents (workers,
+  // reviewers, etc.) calling notify_user via MCP get a clear 403 even if a
+  // misconfigured agent tries it. The check matches case-insensitively because
+  // user-set roles are free-form strings.
+
+  function isOrchestratorRole(role: string | undefined): boolean {
+    return typeof role === 'string' && role.trim().toLowerCase() === 'orchestrator'
+  }
+
+  router.post('/inbox', (req: Request, res: Response) => {
+    if (!inboxChannel) { res.status(503).json({ error: 'Inbox not available' }); return }
+    try {
+      const { agentId, agentName, message, priority, tags, tabId } = req.body
+      if (!agentId || !agentName || !message || !priority) {
+        res.status(400).json({ error: 'agentId, agentName, message, priority are required' })
+        return
+      }
+      const agent = registry.get(agentName)
+      if (!agent) {
+        res.status(404).json({ error: `Agent '${agentName}' not registered` })
+        return
+      }
+      if (!isOrchestratorRole(agent.role)) {
+        res.status(403).json({
+          error: `notify_user is restricted to agents with role 'orchestrator' (yours: '${agent.role}')`
+        })
+        return
+      }
+      const msg = inboxChannel.postMessage(
+        agentId, agentName, message, priority as InboxPriority, tags || [], tabId
+      )
+      res.json(msg)
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || 'Invalid inbox message' })
+    }
+  })
+
+  router.get('/inbox', (_req: Request, res: Response) => {
+    if (!inboxChannel) { res.status(503).json({ error: 'Inbox not available' }); return }
+    res.json(inboxChannel.readAll())
+  })
+
+  router.post('/inbox/:id/read', (req: Request, res: Response) => {
+    if (!inboxChannel) { res.status(503).json({ error: 'Inbox not available' }); return }
+    const msg = inboxChannel.markRead(req.params.id)
+    if (!msg) { res.status(404).json({ error: 'Message not found' }); return }
+    res.json(msg)
+  })
+
+  router.post('/inbox/read-all', (_req: Request, res: Response) => {
+    if (!inboxChannel) { res.status(503).json({ error: 'Inbox not available' }); return }
+    const count = inboxChannel.markAllRead()
+    res.json({ marked: count })
+  })
+
+  router.delete('/inbox/:id', (req: Request, res: Response) => {
+    if (!inboxChannel) { res.status(503).json({ error: 'Inbox not available' }); return }
+    const ok = inboxChannel.deleteMessage(req.params.id)
+    if (!ok) { res.status(404).json({ error: 'Message not found' }); return }
+    res.json({ status: 'ok' })
+  })
+
+  // --- Team proposal routes ---
+  // Same orchestrator-only gate as the inbox: spawn proposals are a CEO-tier
+  // capability, not something workers should be doing.
+
+  router.post('/proposals', (req: Request, res: Response) => {
+    if (!proposalsChannel) { res.status(503).json({ error: 'Proposals not available' }); return }
+    try {
+      const { proposedBy, summary, agents, tabId } = req.body
+      if (!proposedBy) { res.status(400).json({ error: 'proposedBy is required' }); return }
+      const agent = registry.get(proposedBy)
+      if (!agent) {
+        res.status(404).json({ error: `Agent '${proposedBy}' not registered` })
+        return
+      }
+      if (!isOrchestratorRole(agent.role)) {
+        res.status(403).json({
+          error: `propose_team is restricted to agents with role 'orchestrator' (yours: '${agent.role}')`
+        })
+        return
+      }
+      const proposal = proposalsChannel.createProposal(proposedBy, summary, agents, tabId)
+      res.json(proposal)
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || 'Invalid proposal' })
+    }
+  })
+
+  router.get('/proposals', (req: Request, res: Response) => {
+    if (!proposalsChannel) { res.status(503).json({ error: 'Proposals not available' }); return }
+    const status = req.query.status as string | undefined
+    const list = status === 'pending' ? proposalsChannel.listPending() : proposalsChannel.listAll()
+    res.json(list)
+  })
+
+  router.get('/proposals/:id', (req: Request, res: Response) => {
+    if (!proposalsChannel) { res.status(503).json({ error: 'Proposals not available' }); return }
+    const proposal = proposalsChannel.get(req.params.id)
+    if (!proposal) { res.status(404).json({ error: 'Proposal not found' }); return }
+    res.json(proposal)
   })
 
   // --- File operation routes ---

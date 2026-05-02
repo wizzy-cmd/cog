@@ -4,6 +4,8 @@ import { AgentRegistry } from './agent-registry'
 import { MessageRouter } from './message-router'
 import { Pinboard } from './pinboard'
 import { InfoChannel } from './info-channel'
+import { InboxChannel } from './inbox-channel'
+import { ProposalsChannel } from './proposals-channel'
 import { generateSecret, validateSecret } from './auth'
 import { createRoutes, type OutputAccessor } from './routes'
 import { GroupManager } from './group-manager'
@@ -17,6 +19,8 @@ export interface HubServer {
   messages: MessageRouter
   pinboard: Pinboard
   infoChannel: InfoChannel
+  inboxChannel: InboxChannel
+  proposalsChannel: ProposalsChannel
   groupManager: GroupManager
   agentMetrics: AgentMetrics
   setOutputAccessor: (fn: OutputAccessor) => void
@@ -35,6 +39,8 @@ export function createHubServer(preferredPort = 0): Promise<HubServer> {
     const messages = new MessageRouter(registry, groupManager, agentMetrics)
     const pinboard = new Pinboard()
     const infoChannel = new InfoChannel()
+    const inboxChannel = new InboxChannel()
+    const proposalsChannel = new ProposalsChannel()
 
     app.use(express.json())
 
@@ -50,7 +56,7 @@ export function createHubServer(preferredPort = 0): Promise<HubServer> {
     const outputRef: { accessor: OutputAccessor | null } = { accessor: null }
     const messageStoreRef: { store: MessageStore | null } = { store: null }
     const projectPathRef: { path: string | null } = { path: null }
-    app.use(createRoutes(registry, messages, outputRef, pinboard, infoChannel, messageStoreRef, projectPathRef, groupManager))
+    app.use(createRoutes(registry, messages, outputRef, pinboard, infoChannel, messageStoreRef, projectPathRef, groupManager, inboxChannel, proposalsChannel))
 
     // Bind to 0.0.0.0 so MCP servers running inside WSL2 can reach the hub via
     // the Windows host IP (their `127.0.0.1` is the WSL VM's loopback, not
@@ -72,6 +78,8 @@ export function createHubServer(preferredPort = 0): Promise<HubServer> {
         messages,
         pinboard,
         infoChannel,
+        inboxChannel,
+        proposalsChannel,
         groupManager,
         agentMetrics,
         setOutputAccessor: (fn) => { outputRef.accessor = fn },

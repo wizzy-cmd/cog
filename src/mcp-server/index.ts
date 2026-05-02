@@ -608,6 +608,77 @@ server.tool(
   }
 )
 
+// ── Orchestrator-only tools ──────────────────────────────────────────────────
+// These are gated server-side: the hub checks `agent.role === 'orchestrator'`
+// before accepting the call. Workers/reviewers/researchers will get a clear
+// 403 if they try to use them, so this is a guardrail not a hard secret.
+
+server.tool(
+  'notify_user',
+  'ORCHESTRATOR ONLY. Post a message to the user-facing inbox panel. Use this for messages targeted at the human (questions, status digests, decisions needed) so they do not get buried in agent crosstalk during long unattended runs. Set priority urgent only when something genuinely needs human action soon.',
+  {
+    message: z.string().describe('The message body for the user. Plain text or markdown.'),
+    priority: z.enum(['low', 'normal', 'high', 'urgent']).describe('Importance level. low=FYI, normal=worth reading, high=should read soon, urgent=needs action now.'),
+    tags: z.array(z.string()).optional().describe('Optional tags to categorize the message (e.g. ["build", "blocker"]).')
+  },
+  async ({ message, priority, tags }) => {
+    try {
+      const result = await hubFetch('/inbox', {
+        method: 'POST',
+        body: JSON.stringify({
+          agentId: AGENT_ID,
+          agentName: AGENT_NAME,
+          message,
+          priority,
+          tags: tags || [],
+          tabId: TAB_ID
+        })
+      })
+      return toolResult(result)
+    } catch (err: any) {
+      return toolError(`Failed to post to inbox: ${err.message}`)
+    }
+  }
+)
+
+server.tool(
+  'propose_team',
+  'ORCHESTRATOR ONLY. Submit a proposed team of agents for the user to approve before any agent spawns. The user sees a confirmation modal listing every agent and can deselect any before approving. Use this when the user asks to spin up a team, or when you decide more agents are needed for a task. The agents do NOT spawn from this call alone — wait for the user.',
+  {
+    summary: z.string().describe('Short human-readable description of the team\'s purpose (1-3 sentences).'),
+    agents: z.array(z.object({
+      name: z.string().describe('Unique agent name within this proposal (e.g. "Claude-Backend").'),
+      cli: z.string().describe('CLI tool: claude, codex, kimi, gemini, openclaude, copilot, grok.'),
+      model: z.string().optional().describe('Model name appropriate for the cli (e.g. "sonnet[1m]" for claude, "gpt-5.5" for codex).'),
+      role: z.string().describe('Role: orchestrator, worker, reviewer, researcher, or custom.'),
+      ceoNotes: z.string().describe('Per-agent system instructions defining its job. Empty string if none.'),
+      autoMode: z.boolean().describe('Auto-approve / yolo / bypass-permissions mode. Recommend true for trusted teams.'),
+      shell: z.enum(['cmd', 'powershell', 'wsl', 'bash', 'zsh', 'fish']).optional().describe('Shell to launch in. On Windows recommend "wsl" for codex agents.'),
+      skills: z.array(z.string()).optional().describe('Skill IDs to attach.'),
+      providerUrl: z.string().optional().describe('OpenAI-compatible base URL (only for openclaude with custom providers).')
+    })).describe('The proposed agents. First agent should typically be the orchestrator if including one.')
+  },
+  async ({ summary, agents }) => {
+    try {
+      const result = await hubFetch('/proposals', {
+        method: 'POST',
+        body: JSON.stringify({
+          proposedBy: AGENT_NAME,
+          summary,
+          agents,
+          tabId: TAB_ID
+        })
+      })
+      return toolResult({
+        ...result,
+        next: 'Awaiting user approval in the confirmation modal. Continue other work; you will be notified when they decide.'
+      })
+    } catch (err: any) {
+      return toolError(`Failed to submit team proposal: ${err.message}`)
+    }
+  }
+)
+
 async function main() {
   const transport = new StdioServerTransport()
   await server.connect(transport)
