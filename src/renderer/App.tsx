@@ -12,7 +12,8 @@ import { useAgents } from './hooks/useAgents'
 import { UpdateNotice } from './components/UpdateNotice'
 import { WhatsNewDialog } from './components/WhatsNewDialog'
 import { EditAgentDialog } from './components/EditAgentDialog'
-import type { AgentConfig, AgentGroup, RecentProject, WindowPosition, CanvasState, WorkspaceTab } from '../shared/types'
+import type { AgentConfig, AgentGroup, RecentProject, WindowPosition, CanvasState, WorkspaceTab, TeamProposal, InboxMessage } from '../shared/types'
+import { TeamProposalDialog } from './components/TeamProposalDialog'
 
 declare const electronAPI: {
   getProject: () => Promise<RecentProject | null>
@@ -28,15 +29,18 @@ const USAGE_ID = '__usage__'
 const GIT_ID = '__git__'
 const SCHEDULES_ID = '__schedules__'
 const TROLLBOX_ID = '__trollbox__'
+const INBOX_ID = '__inbox__'
 
 // Helpers for per-tab panel isolation
-const PANEL_PREFIXES = [PINBOARD_ID, INFO_ID, FILES_ID, RAC_ID, USAGE_ID, GIT_ID, SCHEDULES_ID, TROLLBOX_ID]
+const PANEL_PREFIXES = [PINBOARD_ID, INFO_ID, FILES_ID, RAC_ID, USAGE_ID, GIT_ID, SCHEDULES_ID, TROLLBOX_ID, INBOX_ID]
 const panelIdForTab = (base: string, tabId: string): string => `${base}::${tabId}`
 const isPanelWindow = (id: string): boolean => PANEL_PREFIXES.some(p => id === p || id.startsWith(p + '::'))
 
 export function App(): React.ReactElement {
   const [tabs, setTabs] = useState<WorkspaceTab[]>([{ id: 'tab-default', name: 'Workspace 1' }])
   const [activeTabId, setActiveTabId] = useState('tab-default')
+  const [pendingProposal, setPendingProposal] = useState<TeamProposal | null>(null)
+  const [inboxUnreadCount, setInboxUnreadCount] = useState(0)
   const [showSpawnDialog, setShowSpawnDialog] = useState(false)
   const [showPresetDialog, setShowPresetDialog] = useState(false)
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null)
@@ -67,6 +71,7 @@ export function App(): React.ReactElement {
   const gitOpen = tabWindows.some(w => w.id === panelIdForTab(GIT_ID, activeTabId))
   const schedulesOpen = tabWindows.some(w => w.id === panelIdForTab(SCHEDULES_ID, activeTabId))
   const trollboxOpen = tabWindows.some(w => w.id === panelIdForTab(TROLLBOX_ID, activeTabId))
+  const inboxOpen = tabWindows.some(w => w.id === panelIdForTab(INBOX_ID, activeTabId))
 
   const handleSpawn = useCallback(async (config: Omit<AgentConfig, 'id'>) => {
     setShowSpawnDialog(false)
@@ -172,12 +177,75 @@ export function App(): React.ReactElement {
     if (trollboxOpen) { removeWindow(id) } else { addWindow(id, 'Trollbox', undefined, activeTabId) }
   }, [trollboxOpen, addWindow, removeWindow, activeTabId])
 
+  const toggleInbox = useCallback(() => {
+    const id = panelIdForTab(INBOX_ID, activeTabId)
+    if (inboxOpen) { removeWindow(id) } else { addWindow(id, 'Inbox', undefined, activeTabId) }
+  }, [inboxOpen, addWindow, removeWindow, activeTabId])
+
   // Load links & groups when project changes
   useEffect(() => {
     if (!project) return
     window.electronAPI.getLinks().then(setLinks)
     window.electronAPI.getGroups().then(setGroups)
   }, [project])
+
+  // Listen for team proposals: surface modal as soon as the orchestrator submits.
+  // On startup, also pull any pending proposals that landed before the renderer
+  // was ready (so a proposal posted while the app was closed isn't lost).
+  useEffect(() => {
+    let mounted = true
+    window.electronAPI.proposalsListPending().then(list => {
+      if (mounted && list.length > 0 && !pendingProposal) {
+        setPendingProposal(list[0])
+      }
+    })
+    const off = window.electronAPI.onProposalAdded((proposal) => {
+      // Show newest pending. If a modal is already open, defer — the user can
+      // open the next one after dismissing the current.
+      setPendingProposal(prev => prev ?? proposal)
+    })
+    return () => { mounted = false; off() }
+    // We only want this to run once per project mount; pendingProposal in
+    // deps would cause re-subscription churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project])
+
+  // Track inbox unread count for the toolbar badge. Initial fetch + reactive
+  // updates from the IPC events.
+  useEffect(() => {
+    if (!project) return
+    const computeUnread = (msgs: InboxMessage[]) => {
+      setInboxUnreadCount(msgs.filter(m => !m.readAt).length)
+    }
+    window.electronAPI.inboxList().then(computeUnread)
+    const offAdd = window.electronAPI.onInboxMessageAdded(computeUnread)
+    const offUpd = window.electronAPI.onInboxMessageUpdated(computeUnread)
+    return () => { offAdd(); offUpd() }
+  }, [project])
+
+  // Grid layout for an approved team. 3-wide, row-major. Origin offset puts
+  // the orchestrator (gridIndex 0) near the top-left of the visible canvas.
+  // Window dimensions match the workspace's standard agent window (600x400)
+  // with a 40px gutter on each axis.
+  const layoutTeamInGrid = useCallback((spawned: Array<{ agentId: string; name: string; gridIndex: number }>) => {
+    const COLS = 3
+    const W = 600
+    const H = 400
+    const GUTTER_X = 40
+    const GUTTER_Y = 40
+    // Center the grid roughly at the workspace's view origin (-960, -200).
+    // useWindowManager.addWindow uses canvas-space coords so absolute values
+    // here land where you'd expect after panning to home.
+    const ORIGIN_X = -((COLS - 1) * (W + GUTTER_X)) / 2 - W / 2  // ~-960
+    const ORIGIN_Y = -H / 2 - 100  // slight upward bias
+    for (const s of spawned) {
+      const col = s.gridIndex % COLS
+      const row = Math.floor(s.gridIndex / COLS)
+      const x = ORIGIN_X + col * (W + GUTTER_X)
+      const y = ORIGIN_Y + row * (H + GUTTER_Y)
+      addWindowAt(s.agentId, s.name, x, y, W, H, getStatusColor('idle'), activeTabId)
+    }
+  }, [addWindowAt, getStatusColor, activeTabId])
 
   const handleAddLink = useCallback(async (from: string, to: string) => {
     const result = await window.electronAPI.addLink(from, to)
@@ -388,6 +456,9 @@ export function App(): React.ReactElement {
             onToggleSchedules={toggleSchedules}
             trollboxOpen={trollboxOpen}
             onToggleTrollbox={toggleTrollbox}
+            inboxOpen={inboxOpen}
+            onToggleInbox={toggleInbox}
+            inboxUnreadCount={inboxUnreadCount}
             onPresetsClick={() => setShowPresetDialog(true)}
             onBugReport={() => setShowBugReport(true)}
             onSettingsClick={() => setShowSettings(true)}
@@ -501,6 +572,14 @@ export function App(): React.ReactElement {
             const agent = agents.find(a => a.id === editingAgentId)
             return agent ? <EditAgentDialog agent={agent} onClose={() => setEditingAgentId(null)} /> : null
           })()}
+          {pendingProposal && (
+            <TeamProposalDialog
+              proposal={pendingProposal}
+              activeTabId={activeTabId}
+              onClose={() => setPendingProposal(null)}
+              onApproved={(spawned) => layoutTeamInGrid(spawned)}
+            />
+          )}
           <UpdateNotice />
           <WhatsNewDialog />
         </>

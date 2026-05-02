@@ -35,6 +35,9 @@ interface TopBarProps {
   onToggleSchedules: () => void
   trollboxOpen: boolean
   onToggleTrollbox: () => void
+  inboxOpen: boolean
+  onToggleInbox: () => void
+  inboxUnreadCount: number
   onPresetsClick: () => void
   onBugReport: () => void
   onSettingsClick: () => void
@@ -115,6 +118,7 @@ export function TopBar({
   racOpen, onToggleRac, usageOpen, onToggleUsage,
   gitOpen, onToggleGit, schedulesOpen, onToggleSchedules,
   trollboxOpen, onToggleTrollbox,
+  inboxOpen, onToggleInbox, inboxUnreadCount,
   onPresetsClick, onBugReport, onSettingsClick, onHelpMcpToolsClick,
   groups, onLinkDragStart, linkDraggingFrom,
   tabs, activeTabId, onSwitchTab, onCreateTab, onCloseTab, onRenameTab
@@ -145,7 +149,7 @@ export function TopBar({
   const hoverIn = (e: React.MouseEvent) => (e.currentTarget.style.backgroundColor = '#333')
   const hoverOut = (e: React.MouseEvent) => (e.currentTarget.style.backgroundColor = 'transparent')
 
-  const activePanelCount = [pinboardOpen, infoOpen, filesOpen, racOpen, usageOpen, gitOpen, schedulesOpen, trollboxOpen].filter(Boolean).length
+  const activePanelCount = [pinboardOpen, infoOpen, filesOpen, racOpen, usageOpen, gitOpen, schedulesOpen, trollboxOpen, inboxOpen].filter(Boolean).length
 
   return (
     <div style={{
@@ -285,6 +289,7 @@ export function TopBar({
                 { label: `${racOpen ? '\u25CF ' : '  '}R.A.C.`, onClick: onToggleRac, color: racOpen ? '#8cc4ff' : '#888', divider: true },
                 { label: `${schedulesOpen ? '\u25CF ' : '  '}Schedules`, onClick: onToggleSchedules, color: schedulesOpen ? '#8cc4ff' : '#888' },
                 { label: `${trollboxOpen ? '\u25CF ' : '  '}\uD83C\uDF7F Trollbox`, onClick: onToggleTrollbox, color: trollboxOpen ? '#8cc4ff' : '#888' },
+                { label: `${inboxOpen ? '\u25CF ' : '  '}\uD83D\uDCEC Inbox${inboxUnreadCount > 0 ? ` (${inboxUnreadCount})` : ''}`, onClick: onToggleInbox, color: inboxUnreadCount > 0 ? '#f5a25a' : (inboxOpen ? '#8cc4ff' : '#888') },
               ]}
             />
           )}
