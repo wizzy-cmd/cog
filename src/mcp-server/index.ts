@@ -653,7 +653,7 @@ server.tool(
         'Model name appropriate for the cli. Valid values:\n' +
         '  claude: "sonnet" | "opus" | "haiku" | "opus[1m]" — NEVER use "sonnet[1m]". sonnet[1m] is billed against the paid Anthropic API (real money per token), NOT the user\'s Claude Max subscription. Plain "sonnet" is the right pick almost always; only use "opus[1m]" if 1M context is genuinely needed.\n' +
         '  codex: "gpt-5.5" | "gpt-5.4" | "gpt-5" | "o3" | "o3-pro" | "gpt-4.1" | "gpt-4.1-mini" | "" (empty = o4-mini default)\n' +
-        '  kimi: "kimi-k2.5" | "kimi-k2-thinking-turbo" | "moonshot-v1-8k" — note "kimi-k2" is NOT a valid name; use "kimi-k2.5".\n' +
+        '  kimi: "Kimi-k2.6" (latest) | "Kimi-k2.5" | "kimi-k2-thinking-turbo" | "moonshot-v1-8k". CASE MATTERS — use capital K. NEVER use "kimi-k2" or lowercase "kimi-k2.5" — kimi silently rejects unknown names and demands /login.\n' +
         '  gemini: "gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-2.0-flash" | "gemini-2.0-flash-thinking"\n' +
         '  copilot: "gpt-5.5" | "gpt-5.4" | "gpt-5" | "gpt-4o" | "o3" | "o4-mini"\n' +
         '  grok: "grok-3" | "grok-3-mini" | "grok-2"\n' +

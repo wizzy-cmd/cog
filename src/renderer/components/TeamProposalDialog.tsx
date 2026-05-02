@@ -277,7 +277,8 @@ export function TeamProposalDialog({ proposal, activeTabId, onClose, onApproved 
 // is not a real model name (valid is "kimi-k2.5").
 const MODEL_WARNINGS: Record<string, string> = {
   'sonnet[1m]': 'WARNING: sonnet[1m] uses the paid Anthropic API ($$$ per token), NOT your Claude Max subscription. Use plain "sonnet" instead — almost always the right call.',
-  'kimi-k2': 'Not a valid model name. Did the orchestrator mean "kimi-k2.5"?',
+  'kimi-k2': 'Not a valid kimi model. Use "Kimi-k2.6" (capital K). Kimi silently rejects unknown names and falls back to "send /login".',
+  'kimi-k2.5': 'Lowercase rejected by kimi-cli. Use "Kimi-k2.5" (capital K) or upgrade to "Kimi-k2.6".',
 }
 
 function AgentRow({ agent, checked, onToggle }: { agent: ProposedAgent; checked: boolean; onToggle: () => void }) {
