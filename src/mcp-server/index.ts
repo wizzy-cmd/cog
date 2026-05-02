@@ -39,7 +39,39 @@ if (!HUB_PORT || !HUB_SECRET || !AGENT_ID || !AGENT_NAME) {
   process.exit(1)
 }
 
-const HUB_URL = `http://127.0.0.1:${HUB_PORT}`
+/**
+ * Resolve the host the hub is reachable at.
+ *
+ * Default: 127.0.0.1 — works for native Windows / macOS / Linux agents that
+ * share the host loopback with the Cog app.
+ *
+ * WSL2 agents are different: inside the Linux VM `127.0.0.1` is the VM's own
+ * loopback, not the Windows host's. To reach the hub (which runs on Windows)
+ * we have to talk to the Windows host IP. WSL2 makes the Windows host
+ * reachable at the IP listed as the nameserver in /etc/resolv.conf in the
+ * default NAT networking mode. (In mirrored networking mode 127.0.0.1 already
+ * works and the regex below won't even run because /proc/version detection
+ * still passes — but the resulting fetch via the host IP works in both modes.)
+ */
+function resolveHubHost(): string {
+  if (process.platform !== 'linux') return '127.0.0.1'
+  try {
+    // Lazy require so this stays a no-op cost on non-Linux paths.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('node:fs') as typeof import('node:fs')
+    const ver = fs.readFileSync('/proc/version', 'utf8')
+    if (!/microsoft|wsl/i.test(ver)) return '127.0.0.1'
+    const resolv = fs.readFileSync('/etc/resolv.conf', 'utf8')
+    const match = resolv.match(/^\s*nameserver\s+(\d+\.\d+\.\d+\.\d+)\s*$/m)
+    if (match) return match[1]
+  } catch {
+    // Fall through — best-effort detection.
+  }
+  return '127.0.0.1'
+}
+
+const HUB_HOST = resolveHubHost()
+const HUB_URL = `http://${HUB_HOST}:${HUB_PORT}`
 
 async function hubFetch(path: string, opts: RequestInit = {}): Promise<any> {
   const res = await fetch(`${HUB_URL}${path}`, {

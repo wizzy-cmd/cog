@@ -52,7 +52,14 @@ export function createHubServer(preferredPort = 0): Promise<HubServer> {
     const projectPathRef: { path: string | null } = { path: null }
     app.use(createRoutes(registry, messages, outputRef, pinboard, infoChannel, messageStoreRef, projectPathRef, groupManager))
 
-    const server: Server = app.listen(preferredPort, '127.0.0.1', () => {
+    // Bind to 0.0.0.0 so MCP servers running inside WSL2 can reach the hub via
+    // the Windows host IP (their `127.0.0.1` is the WSL VM's loopback, not
+    // Windows'). Authentication is enforced by HUB_SECRET (64 random hex chars,
+    // checked in the middleware above), and Windows Firewall blocks unsolicited
+    // LAN inbound by default. The Remote View / LAN access feature exposes the
+    // hub explicitly through its own opt-in cloudflared/LAN code path; this
+    // bind change only affects loopback + WSL traffic in practice.
+    const server: Server = app.listen(preferredPort, '0.0.0.0', () => {
       const addr = server.address()
       if (!addr || typeof addr === 'string') {
         reject(new Error('Failed to get server address'))
