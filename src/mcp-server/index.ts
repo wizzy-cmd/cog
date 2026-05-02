@@ -651,7 +651,7 @@ server.tool(
       cli: z.string().describe('CLI tool: claude, codex, kimi, gemini, openclaude, copilot, grok.'),
       model: z.string().optional().describe(
         'Model name appropriate for the cli. Valid values:\n' +
-        '  claude: "sonnet" | "opus" | "haiku" | "opus[1m]" — DO NOT use "sonnet[1m]" (it costs extra usage; the user only wants 1M context for opus).\n' +
+        '  claude: "sonnet" | "opus" | "haiku" | "opus[1m]" — NEVER use "sonnet[1m]". sonnet[1m] is billed against the paid Anthropic API (real money per token), NOT the user\'s Claude Max subscription. Plain "sonnet" is the right pick almost always; only use "opus[1m]" if 1M context is genuinely needed.\n' +
         '  codex: "gpt-5.5" | "gpt-5.4" | "gpt-5" | "o3" | "o3-pro" | "gpt-4.1" | "gpt-4.1-mini" | "" (empty = o4-mini default)\n' +
         '  kimi: "kimi-k2.5" | "kimi-k2-thinking-turbo" | "moonshot-v1-8k" — note "kimi-k2" is NOT a valid name; use "kimi-k2.5".\n' +
         '  gemini: "gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-2.0-flash" | "gemini-2.0-flash-thinking"\n' +

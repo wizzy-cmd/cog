@@ -271,11 +271,12 @@ export function TeamProposalDialog({ proposal, activeTabId, onClose, onApproved 
 }
 
 // Known-expensive or invalid model picks the orchestrator might choose. Shown
-// in orange in the modal so the user notices before approving. sonnet[1m]
-// burns extra usage credits compared to plain sonnet; "kimi-k2" is not a
-// real model name (the orchestrator sometimes invents it; valid is "kimi-k2.5").
+// in orange in the modal so the user notices before approving. sonnet[1m] is
+// billed against the paid Anthropic API (real money per token) instead of the
+// Claude Max subscription — easy money sink to spawn by accident. "kimi-k2"
+// is not a real model name (valid is "kimi-k2.5").
 const MODEL_WARNINGS: Record<string, string> = {
-  'sonnet[1m]': 'Sonnet 1M context burns extra usage credits. Use plain "sonnet" unless you genuinely need 1M tokens.',
+  'sonnet[1m]': 'WARNING: sonnet[1m] uses the paid Anthropic API ($$$ per token), NOT your Claude Max subscription. Use plain "sonnet" instead — almost always the right call.',
   'kimi-k2': 'Not a valid model name. Did the orchestrator mean "kimi-k2.5"?',
 }
 
