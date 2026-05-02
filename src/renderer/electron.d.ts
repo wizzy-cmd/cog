@@ -33,7 +33,7 @@ declare global {
       // Team proposals
       proposalsListPending: () => Promise<TeamProposal[]>
       proposalsGet: (id: string) => Promise<TeamProposal | null>
-      proposalsApprove: (proposalId: string, approvedAgentNames: string[], tabId?: string) => Promise<{
+      proposalsApprove: (proposalId: string, agents: import('../shared/types').ProposedAgent[], tabId?: string) => Promise<{
         success: boolean
         error?: string
         spawned?: Array<{ agentId: string; name: string; gridIndex: number }>

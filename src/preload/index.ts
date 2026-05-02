@@ -94,8 +94,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Team proposals
   proposalsListPending: () => ipcRenderer.invoke(IPC.PROPOSALS_LIST_PENDING),
   proposalsGet: (id: string) => ipcRenderer.invoke(IPC.PROPOSALS_GET, id),
-  proposalsApprove: (proposalId: string, approvedAgentNames: string[], tabId?: string) =>
-    ipcRenderer.invoke(IPC.PROPOSALS_APPROVE, { proposalId, approvedAgentNames, tabId }),
+  proposalsApprove: (proposalId: string, agents: unknown[], tabId?: string) =>
+    ipcRenderer.invoke(IPC.PROPOSALS_APPROVE, { proposalId, agents, tabId }),
   proposalsReject: (proposalId: string, feedback?: string) =>
     ipcRenderer.invoke(IPC.PROPOSALS_REJECT, { proposalId, feedback }),
   onProposalAdded: (callback: (proposal: unknown) => void) => {

@@ -1824,7 +1824,10 @@ function setupIPC(): void {
   })
   ipcMain.handle(IPC.PROPOSALS_APPROVE, async (_event, payload: {
     proposalId: string
-    approvedAgentNames: string[]
+    // Renderer is now the source of truth at approve time — it sends the FULL
+    // edited agent list (post-checkbox-filter, post-inline-edits). The
+    // proposal stored in the channel is just the original draft for audit.
+    agents: ProposedAgent[]
     tabId?: string
   }) => {
     if (!hub) return { success: false, error: 'Hub not ready' }
@@ -1833,16 +1836,13 @@ function setupIPC(): void {
     if (proposal.status !== 'pending') {
       return { success: false, error: `Proposal already ${proposal.status}` }
     }
-
-    const approvedSet = new Set(payload.approvedAgentNames.map(n => n.trim().toLowerCase()))
-    const toSpawn = proposal.agents.filter(a => approvedSet.has(a.name.trim().toLowerCase()))
-    if (toSpawn.length === 0) {
+    if (!Array.isArray(payload.agents) || payload.agents.length === 0) {
       hub.proposalsChannel.resolve(payload.proposalId, 'rejected', 'No agents selected')
       return { success: false, error: 'No agents selected' }
     }
 
     // Sort by role priority so the orchestrator lands top-left, workers next, etc.
-    const ordered = [...toSpawn].sort((a, b) => roleRank(a.role) - roleRank(b.role))
+    const ordered = [...payload.agents].sort((a, b) => roleRank(a.role) - roleRank(b.role))
     const tabId = payload.tabId || 'tab-default'
     const cwd = projectManager.currentProject?.path || process.cwd()
 
