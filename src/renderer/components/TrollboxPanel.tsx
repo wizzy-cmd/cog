@@ -284,6 +284,8 @@ export function TrollboxPanel(): React.ReactElement {
     let localClient: TrollboxClient | null = null
     let unsubscribe: (() => void) | null = null
 
+    let unsubscribeRemoteSend: (() => void) | null = null
+
     ;(async () => {
       const machineHash = await window.electronAPI.getMachineHash()
       if (disposed) return
@@ -299,7 +301,36 @@ export function TrollboxPanel(): React.ReactElement {
       if (disposed) return
       clientRef.current = client
       localClient = client
-      unsubscribe = client.onState(setState)
+      // Subscribe to state changes for both the local UI and the main-process
+      // bridge so the 3DS HTTP API can serve a live snapshot. We strip fp_enc
+      // from the bridged messages — the 3DS doesn't need it and dropping it
+      // keeps the JSON tighter on the slow polled link.
+      unsubscribe = client.onState((s) => {
+        setState(s)
+        try {
+          window.electronAPI.pushTrollboxState({
+            status: s.status,
+            onlineCount: s.onlineCount,
+            messages: s.messages.map(m => ({ id: m.id, ts: m.ts, nick: m.nick, text: m.text })),
+            pauseUntil: s.pauseUntil,
+            pauseReason: s.pauseReason,
+          })
+        } catch { /* preload may not be ready */ }
+      })
+      // Forward 3DS-originated chat sends to the live client. Reply per
+      // payload.id so the main-side promise resolves with the right result.
+      unsubscribeRemoteSend = window.electronAPI.onTrollboxRemoteSend(async (payload) => {
+        try {
+          const result = await client.sendChat(payload.nick, payload.text)
+          if (result.ok) {
+            window.electronAPI.replyTrollboxRemoteSend({ id: payload.id, ok: true })
+          } else {
+            window.electronAPI.replyTrollboxRemoteSend({ id: payload.id, ok: false, error: result.reason })
+          }
+        } catch (err: any) {
+          window.electronAPI.replyTrollboxRemoteSend({ id: payload.id, ok: false, error: err?.message || 'send failed' })
+        }
+      })
       await client.connect()
     })()
 
@@ -310,10 +341,23 @@ export function TrollboxPanel(): React.ReactElement {
         sendHintTimerRef.current = null
       }
       if (unsubscribe) unsubscribe()
+      if (unsubscribeRemoteSend) unsubscribeRemoteSend()
       if (localClient) {
         localClient.disconnect()
       }
       clientRef.current = null
+      // Push a final 'closed' state so the 3DS sees it go offline immediately
+      // when the user closes the panel, not after the next state change that
+      // never arrives.
+      try {
+        window.electronAPI.pushTrollboxState({
+          status: 'closed',
+          onlineCount: 0,
+          messages: [],
+          pauseUntil: null,
+          pauseReason: null,
+        })
+      } catch { /* preload may be torn down */ }
     }
   }, [])
 

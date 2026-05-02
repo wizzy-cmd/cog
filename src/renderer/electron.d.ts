@@ -88,6 +88,12 @@ declare global {
       clearWorkshopPasscode: () => Promise<{ success: boolean }>
       // Workspace state bridge (fire-and-forget)
       pushWorkspaceState: (state: unknown) => void
+      // Trollbox bridge — renderer pushes state, main forwards 3DS sends
+      pushTrollboxState: (state: unknown) => void
+      onTrollboxRemoteSend: (
+        callback: (payload: { id: string; text: string; nick: string }) => void
+      ) => () => void
+      replyTrollboxRemoteSend: (payload: { id: string; ok: boolean; error?: string }) => void
       // Workshop window updates from mobile
       onWorkshopWindowUpdate: (callback: (update: { id: string; x?: number; y?: number; width?: number; height?: number }) => void) => () => void
       // Workshop panel toggle from mobile

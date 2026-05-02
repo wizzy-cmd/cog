@@ -106,6 +106,18 @@ export interface RemoteServerDeps {
   // the optional feedback back to the proposing orchestrator.
   approveProposal: (proposalId: string) => Promise<{ success: boolean; error?: string; spawned?: number }>
   rejectProposal: (proposalId: string, feedback?: string) => { success: boolean; error?: string }
+  // ── Trollbox bridge (Phase 4b) ──────────────────────────────────────────
+  // The TrollboxClient lives in the renderer; main caches the latest state
+  // it pushes us. If the renderer panel is closed, getTrollboxState returns
+  // null and the 3DS shows an "offline" hint.
+  getTrollboxState: () => null | {
+    status: string
+    onlineCount: number
+    messages: Array<{ id: string; ts: number; nick: string; text: string }>
+    pauseUntil: number | null
+    pauseReason: string | null
+  }
+  sendTrollboxMessage: (text: string, nick: string) => Promise<{ ok: boolean; error?: string }>
 }
 
 // Find the static directory at runtime. In electron-vite dev mode, __dirname
@@ -447,6 +459,56 @@ export class RemoteServer {
       }
       next()
     }
+
+    // ── Trollbox endpoints (Phase 4b) ─────────────────────────────────────
+    // GET returns up to N most recent messages + connection metadata. POST
+    // forwards a chat to the renderer's live client. Workshop-PIN gated —
+    // same trust boundary as spawn/kill, since the device owner is already
+    // authenticated. The 3DS reads /trollbox on a 2-3s poll while its modal
+    // viewer is open; closing the modal stops the poll.
+    this.app.get('/r/:token/trollbox', requireWorkshop, (_req: Request, res: Response) => {
+      const state = this.deps.getTrollboxState()
+      if (!state) {
+        res.json({
+          status: 'offline',
+          onlineCount: 0,
+          messages: [],
+          pauseUntil: null,
+          pauseReason: null,
+          hint: 'Open the Trollbox panel on desktop to enable 3DS chat.'
+        })
+        return
+      }
+      // Cap to last 80 — keeps the JSON small enough for the 3DS to parse.
+      const recent = state.messages.slice(-80)
+      res.json({
+        status: state.status,
+        onlineCount: state.onlineCount,
+        messages: recent,
+        pauseUntil: state.pauseUntil,
+        pauseReason: state.pauseReason
+      })
+    })
+
+    this.app.post('/r/:token/trollbox/send', requireWorkshop, async (req: Request, res: Response) => {
+      const { text, nick } = req.body ?? {}
+      if (typeof text !== 'string' || !text.trim()) {
+        res.status(400).json({ ok: false, error: 'text required' })
+        return
+      }
+      if (typeof nick !== 'string' || !nick.trim()) {
+        res.status(400).json({ ok: false, error: 'nick required' })
+        return
+      }
+      const safeText = text.slice(0, 200)
+      const safeNick = nick.slice(0, 24)
+      try {
+        const result = await this.deps.sendTrollboxMessage(safeText, safeNick)
+        res.status(result.ok ? 200 : 400).json(result)
+      } catch (err: any) {
+        res.status(500).json({ ok: false, error: err?.message || 'send failed' })
+      }
+    })
 
     this.app.get('/r/:token/workshop/state', requireWorkshop, (_req, res) => {
       const ws = this.deps.getWorkspaceState()

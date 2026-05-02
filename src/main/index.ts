@@ -78,6 +78,36 @@ let remoteStatusTicker: ReturnType<typeof setInterval> | null = null
 let workshopPasscodeHash: string | null = null
 let cachedWorkspaceState: any = null
 
+// Trollbox bridge state. cachedTrollboxState mirrors the renderer's
+// TrollboxClient snapshot (status, messages, online count, pause flag) so
+// the 3DS HTTP API can serve it from main without crossing into the
+// renderer process per request. trollboxSendReplies routes ack/err back
+// to the awaiting POST handler.
+let cachedTrollboxState: {
+  status: string
+  onlineCount: number
+  messages: Array<{ id: string; ts: number; nick: string; text: string }>
+  pauseUntil: number | null
+  pauseReason: string | null
+} | null = null
+const trollboxSendReplies = new Map<string, (r: { ok: boolean; error?: string }) => void>()
+let trollboxSendCounter = 0
+
+function sendTrollboxFromRemote(text: string, nick: string): Promise<{ ok: boolean; error?: string }> {
+  if (!mainWindow) return Promise.resolve({ ok: false, error: 'desktop window not ready' })
+  if (!cachedTrollboxState || cachedTrollboxState.status !== 'connected') {
+    return Promise.resolve({ ok: false, error: 'trollbox not connected on desktop — open the panel first' })
+  }
+  const id = `t${Date.now()}-${trollboxSendCounter++}`
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      if (trollboxSendReplies.delete(id)) resolve({ ok: false, error: 'send timed out' })
+    }, 8000)
+    trollboxSendReplies.set(id, (r) => { clearTimeout(timeout); resolve(r) })
+    mainWindow!.webContents.send(IPC.TROLLBOX_REMOTE_SEND, { id, text, nick })
+  })
+}
+
 // Mirror of the renderer's workshop window layout, kept current via IPC
 // from the Workspace component. Consumed by /state so remote clients
 // (mobile, 3DS) can render cards at desktop positions.
@@ -446,6 +476,10 @@ async function enableRemoteView(): Promise<void> {
       } catch { /* orchestrator may not be reachable */ }
       return { success: true }
     },
+    // ── Trollbox bridge (Phase 4b) ─────────────────────────────────────────
+    getTrollboxState: () => cachedTrollboxState,
+    sendTrollboxMessage: (text: string, nick: string) =>
+      sendTrollboxFromRemote(text, nick),
   })
 
   const expressApp = remoteServer.getApp()
@@ -2018,6 +2052,23 @@ function setupIPC(): void {
   // Workspace state bridge (fire-and-forget from renderer)
   ipcMain.on(IPC.WORKSPACE_STATE_PUSH, (_event, state) => {
     cachedWorkspaceState = state
+  })
+
+  // Trollbox bridge — renderer holds the live Supabase client; main caches
+  // the snapshot so the 3DS HTTP API can serve chat history without going
+  // through the renderer per-request. Sends are forwarded back to the
+  // renderer over a paired request/reply channel below. If the user has
+  // never opened the trollbox panel this session, cachedTrollboxState is
+  // null and the 3DS sees an "offline" state.
+  ipcMain.on(IPC.TROLLBOX_STATE_PUSH, (_event, state) => {
+    cachedTrollboxState = state
+  })
+  ipcMain.on(`${IPC.TROLLBOX_REMOTE_SEND}:reply`, (_event, payload: { id: string; ok: boolean; error?: string }) => {
+    if (!payload || typeof payload.id !== 'string') return
+    const pending = trollboxSendReplies.get(payload.id)
+    if (!pending) return
+    trollboxSendReplies.delete(payload.id)
+    pending(payload)
   })
 
   // Workshop layout mirror (fire-and-forget from renderer)

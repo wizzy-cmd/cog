@@ -203,6 +203,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearWorkshopPasscode: () => ipcRenderer.invoke(IPC.WORKSHOP_CLEAR_PASSCODE),
   // Workspace state bridge (fire-and-forget)
   pushWorkspaceState: (state: unknown) => ipcRenderer.send(IPC.WORKSPACE_STATE_PUSH, state),
+  // Trollbox bridge — renderer pushes the live state snapshot to main on
+  // every change, and listens for remote (3DS) send requests to forward to
+  // its TrollboxClient. Replies go back via :reply suffix on the same channel.
+  pushTrollboxState: (state: unknown) => ipcRenderer.send(IPC.TROLLBOX_STATE_PUSH, state),
+  onTrollboxRemoteSend: (
+    callback: (payload: { id: string; text: string; nick: string }) => void
+  ) => {
+    const handler = (_event: unknown, payload: { id: string; text: string; nick: string }) => callback(payload)
+    ipcRenderer.on(IPC.TROLLBOX_REMOTE_SEND, handler)
+    return () => ipcRenderer.removeListener(IPC.TROLLBOX_REMOTE_SEND, handler)
+  },
+  replyTrollboxRemoteSend: (payload: { id: string; ok: boolean; error?: string }) =>
+    ipcRenderer.send(`${IPC.TROLLBOX_REMOTE_SEND}:reply`, payload),
   // Workshop window updates from mobile
   onWorkshopWindowUpdate: (callback: (update: { id: string; x?: number; y?: number; width?: number; height?: number }) => void) => {
     const handler = (_e: unknown, update: any) => callback(update)
