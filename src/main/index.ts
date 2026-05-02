@@ -635,12 +635,18 @@ function buildCliLaunchCommands(
 // Keeps it short so the agent doesn't waste context — just tells it who it is
 // and to check MCP tools for instructions.
 function buildInitialPrompt(config: AgentConfig): string {
+  const isOrchestrator = (config.role || '').trim().toLowerCase() === 'orchestrator'
+  const baseTools = `send_message, get_messages, get_agents, read_ceo_notes, get_agent_output, post_task, read_tasks, claim_task, complete_task, abandon_task, get_task, post_info, read_info, delete_info, update_info, update_status, get_message_history, ack_messages, read_file, write_file, list_directory`
+  const orchestratorTools = isOrchestrator ? `, notify_user, propose_team` : ''
   const lines = [
     `You are "${config.name}" (role: ${config.role}) in a Cog workspace.`,
-    `You have Cog MCP tools: send_message, get_messages, get_agents, read_ceo_notes, get_agent_output, post_task, read_tasks, claim_task, complete_task, abandon_task, get_task, post_info, read_info, delete_info, update_info, update_status, get_message_history, ack_messages, read_file, write_file, list_directory.`,
+    `You have Cog MCP tools: ${baseTools}${orchestratorTools}.`,
+    isOrchestrator
+      ? `As orchestrator you have two extra tools: notify_user(message, priority) posts to the user's inbox panel for messages targeted at the human (use sparingly, with priority high/urgent only when the user genuinely needs to act). propose_team({summary, agents}) submits a team for the user to approve in a confirmation modal — agents do NOT spawn until the user clicks Approve, so wait for the user response.`
+      : '',
     `Do these steps NOW: 1) Call read_ceo_notes() for your instructions. 2) Call get_messages() to check for messages. 3) Call read_tasks() to check for open tasks you can claim.`,
     `Your CEO notes define your workflow. Follow them exactly. After initial setup, WAIT for nudges — do NOT poll.`,
-  ]
+  ].filter(Boolean)
   return lines.join(' ')
 }
 
