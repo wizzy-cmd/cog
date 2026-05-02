@@ -649,7 +649,17 @@ server.tool(
     agents: z.array(z.object({
       name: z.string().describe('Unique agent name within this proposal (e.g. "Claude-Backend").'),
       cli: z.string().describe('CLI tool: claude, codex, kimi, gemini, openclaude, copilot, grok.'),
-      model: z.string().optional().describe('Model name appropriate for the cli (e.g. "sonnet[1m]" for claude, "gpt-5.5" for codex).'),
+      model: z.string().optional().describe(
+        'Model name appropriate for the cli. Valid values:\n' +
+        '  claude: "sonnet" | "opus" | "haiku" | "opus[1m]" — DO NOT use "sonnet[1m]" (it costs extra usage; the user only wants 1M context for opus).\n' +
+        '  codex: "gpt-5.5" | "gpt-5.4" | "gpt-5" | "o3" | "o3-pro" | "gpt-4.1" | "gpt-4.1-mini" | "" (empty = o4-mini default)\n' +
+        '  kimi: "kimi-k2.5" | "kimi-k2-thinking-turbo" | "moonshot-v1-8k" — note "kimi-k2" is NOT a valid name; use "kimi-k2.5".\n' +
+        '  gemini: "gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-2.0-flash" | "gemini-2.0-flash-thinking"\n' +
+        '  copilot: "gpt-5.5" | "gpt-5.4" | "gpt-5" | "gpt-4o" | "o3" | "o4-mini"\n' +
+        '  grok: "grok-3" | "grok-3-mini" | "grok-2"\n' +
+        '  openclaude: any OpenAI-compatible model name (e.g. "deepseek-chat", "llama3.3").\n' +
+        'If unsure, omit this field — the CLI will pick its default.'
+      ),
       role: z.string().describe('Role: orchestrator, worker, reviewer, researcher, or custom.'),
       ceoNotes: z.string().describe('Per-agent system instructions defining its job. Empty string if none.'),
       autoMode: z.boolean().describe('Auto-approve / yolo / bypass-permissions mode. Recommend true for trusted teams.'),

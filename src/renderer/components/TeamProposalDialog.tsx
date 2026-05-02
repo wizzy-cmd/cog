@@ -270,8 +270,18 @@ export function TeamProposalDialog({ proposal, activeTabId, onClose, onApproved 
   )
 }
 
+// Known-expensive or invalid model picks the orchestrator might choose. Shown
+// in orange in the modal so the user notices before approving. sonnet[1m]
+// burns extra usage credits compared to plain sonnet; "kimi-k2" is not a
+// real model name (the orchestrator sometimes invents it; valid is "kimi-k2.5").
+const MODEL_WARNINGS: Record<string, string> = {
+  'sonnet[1m]': 'Sonnet 1M context burns extra usage credits. Use plain "sonnet" unless you genuinely need 1M tokens.',
+  'kimi-k2': 'Not a valid model name. Did the orchestrator mean "kimi-k2.5"?',
+}
+
 function AgentRow({ agent, checked, onToggle }: { agent: ProposedAgent; checked: boolean; onToggle: () => void }) {
   const [expanded, setExpanded] = useState(false)
+  const warning = agent.model ? MODEL_WARNINGS[agent.model] : undefined
   return (
     <>
       <tr style={{ cursor: 'pointer' }} onClick={() => setExpanded(v => !v)}>
@@ -280,7 +290,20 @@ function AgentRow({ agent, checked, onToggle }: { agent: ProposedAgent; checked:
         </td>
         <td style={{ ...tdStyle, color: '#ddd', fontWeight: 500 }}>{agent.name}</td>
         <td style={tdStyle}>{agent.cli}</td>
-        <td style={tdStyle}>{agent.model || <span style={{ color: '#666' }}>default</span>}</td>
+        <td style={tdStyle}>
+          {agent.model ? (
+            <span
+              title={warning}
+              style={warning
+                ? { color: '#f5a25a', borderBottom: '1px dotted #f5a25a', cursor: 'help' }
+                : undefined}
+            >
+              {agent.model}{warning ? ' \u26A0' : ''}
+            </span>
+          ) : (
+            <span style={{ color: '#666' }}>default</span>
+          )}
+        </td>
         <td style={tdStyle}>{agent.role || <span style={{ color: '#666' }}>—</span>}</td>
         <td style={tdStyle}>{agent.autoMode ? <span style={{ color: '#f5a25a' }}>auto</span> : 'manual'}</td>
         <td style={tdStyle}>{agent.shell || <span style={{ color: '#666' }}>default</span>}</td>
