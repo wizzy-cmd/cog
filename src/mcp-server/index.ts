@@ -47,13 +47,17 @@ if (!HUB_PORT || !HUB_SECRET || !AGENT_ID || !AGENT_NAME) {
  *
  * WSL2 agents are different: inside the Linux VM `127.0.0.1` is the VM's own
  * loopback, not the Windows host's. To reach the hub (which runs on Windows)
- * we have to talk to the Windows host IP. WSL2 makes the Windows host
- * reachable at the IP listed as the nameserver in /etc/resolv.conf in the
- * default NAT networking mode. (In mirrored networking mode 127.0.0.1 already
- * works and the regex below won't even run because /proc/version detection
- * still passes — but the resulting fetch via the host IP works in both modes.)
+ * we have to talk to the Windows host IP, which in WSL2's default NAT mode
+ * is the default gateway of the eth0 interface (NOT the DNS nameserver — on
+ * newer WSL builds those are different; the nameserver is now a WSL-internal
+ * DNS forwarder like 10.255.255.254). We parse /proc/net/route, which lists
+ * routes with the Gateway as a little-endian hex IPv4 address.
+ *
+ * Override: COG_HUB_HOST env var wins over auto-detection if set.
  */
 function resolveHubHost(): string {
+  const override = process.env.COG_HUB_HOST || process.env.AGENTORCH_HUB_HOST
+  if (override) return override
   if (process.platform !== 'linux') return '127.0.0.1'
   try {
     // Lazy require so this stays a no-op cost on non-Linux paths.
@@ -61,9 +65,25 @@ function resolveHubHost(): string {
     const fs = require('node:fs') as typeof import('node:fs')
     const ver = fs.readFileSync('/proc/version', 'utf8')
     if (!/microsoft|wsl/i.test(ver)) return '127.0.0.1'
-    const resolv = fs.readFileSync('/etc/resolv.conf', 'utf8')
-    const match = resolv.match(/^\s*nameserver\s+(\d+\.\d+\.\d+\.\d+)\s*$/m)
-    if (match) return match[1]
+    // /proc/net/route columns (tab-separated):
+    //   Iface  Destination  Gateway   Flags  RefCnt  Use  Metric  Mask  ...
+    // Default route has Destination=00000000. Gateway is the host IP we want,
+    // stored as a little-endian uint32 hex string (e.g. 01C01FAC = 172.31.192.1).
+    const lines = fs.readFileSync('/proc/net/route', 'utf8').split('\n').slice(1)
+    for (const line of lines) {
+      const cols = line.split(/\s+/)
+      if (cols.length >= 3 && cols[1] === '00000000') {
+        const hex = cols[2]
+        if (hex && /^[0-9A-Fa-f]{8}$/.test(hex)) {
+          // Reverse byte order: 01 C0 1F AC -> AC 1F C0 01 -> 172.31.192.1
+          const b1 = parseInt(hex.slice(6, 8), 16)
+          const b2 = parseInt(hex.slice(4, 6), 16)
+          const b3 = parseInt(hex.slice(2, 4), 16)
+          const b4 = parseInt(hex.slice(0, 2), 16)
+          return `${b1}.${b2}.${b3}.${b4}`
+        }
+      }
+    }
   } catch {
     // Fall through — best-effort detection.
   }
