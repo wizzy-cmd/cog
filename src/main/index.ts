@@ -350,6 +350,102 @@ async function enableRemoteView(): Promise<void> {
     deleteInfoEntry: (id: string) => {
       hub.infoChannel.deleteInfo(id)
     },
+    // ── Inbox + team proposals (Phase 4a — 3DS access) ─────────────────────
+    // Enrich each inbox message with linked-proposal data when the message
+    // carries a propose-team tag. The 3DS reads `proposalId` and the team
+    // summary off the message itself so it can render the approve/reject UI
+    // without a second roundtrip.
+    getInboxMessages: () => {
+      if (!hub) return []
+      const msgs = hub.inboxChannel.readAll()
+      return msgs.map(m => {
+        // Convention: messages that wrap a team proposal are tagged
+        // 'proposal:<proposalId>' by the orchestrator's propose_team flow.
+        const propTag = m.tags?.find(t => t.startsWith('proposal:'))
+        const proposalId = propTag ? propTag.slice('proposal:'.length) : undefined
+        const proposal = proposalId ? hub!.proposalsChannel.get(proposalId) : null
+        return {
+          id: m.id,
+          agentName: m.agentName,
+          message: m.message,
+          priority: m.priority,
+          createdAt: m.createdAt,
+          readAt: m.readAt,
+          ...(proposal ? {
+            proposalId: proposal.id,
+            proposalSummary: proposal.summary,
+            proposalAgents: proposal.agents.map(a => ({
+              name: a.name, cli: a.cli, model: a.model, role: a.role
+            })),
+            proposalStatus: proposal.status
+          } : {})
+        }
+      })
+    },
+    getInboxUnreadCount: () => hub?.inboxChannel.unreadCount() ?? 0,
+    markInboxRead: (id: string) => {
+      if (!hub) return false
+      return hub.inboxChannel.markRead(id) !== null
+    },
+    approveProposal: async (proposalId: string) => {
+      if (!hub) return { success: false, error: 'Hub not ready' }
+      const proposal = hub.proposalsChannel.get(proposalId)
+      if (!proposal) return { success: false, error: 'Proposal not found' }
+      if (proposal.status !== 'pending') {
+        return { success: false, error: `Proposal already ${proposal.status}` }
+      }
+      // 3DS approves as-stored — no per-agent edits available on the small
+      // screen. Sort by role priority so the orchestrator lands top-left.
+      const ordered = [...proposal.agents].sort((a, b) => roleRank(a.role) - roleRank(b.role))
+      const tabId = proposal.tabId || 'tab-default'
+      const cwd = projectManager.currentProject?.path || process.cwd()
+
+      let spawned = 0
+      for (const a of ordered) {
+        const config: AgentConfig = {
+          id: uuidv4(),
+          name: uniqueAgentName(a.name),
+          cli: a.cli,
+          cwd,
+          role: a.role,
+          ceoNotes: a.ceoNotes,
+          shell: a.shell || (process.platform === 'win32' ? 'powershell' : 'bash'),
+          admin: false,
+          autoMode: a.autoMode,
+          model: a.model,
+          providerUrl: a.providerUrl,
+          skills: a.skills,
+          tabId,
+          theme: a.theme
+        }
+        try {
+          handleSpawnAgent(config)
+          spawned++
+        } catch (err: any) {
+          console.error(`[remote:proposal-approve] spawn failed for ${a.name}:`, err?.message)
+        }
+      }
+      hub.proposalsChannel.resolve(proposalId, 'approved')
+      try {
+        const summary = spawned === ordered.length
+          ? `User approved your team from 3DS. Spawned: ${ordered.map(a => a.name).join(', ')}.`
+          : `User approved part of your team from 3DS. Spawned ${spawned}/${ordered.length}.`
+        hub.messages.send('user', proposal.proposedBy, summary)
+      } catch { /* orchestrator may not be reachable */ }
+      return { success: true, spawned }
+    },
+    rejectProposal: (proposalId: string, feedback?: string) => {
+      if (!hub) return { success: false, error: 'Hub not ready' }
+      const resolved = hub.proposalsChannel.resolve(proposalId, 'rejected', feedback)
+      if (!resolved) return { success: false, error: 'Proposal not found' }
+      try {
+        const note = feedback
+          ? `User rejected your team proposal from 3DS. Feedback: ${feedback}`
+          : 'User rejected your team proposal from 3DS.'
+        hub.messages.send('user', resolved.proposedBy, note)
+      } catch { /* orchestrator may not be reachable */ }
+      return { success: true }
+    },
   })
 
   const expressApp = remoteServer.getApp()

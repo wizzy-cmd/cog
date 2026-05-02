@@ -40,6 +40,23 @@ export interface RemoteTaskSummary {
   claimedBy: string | null
 }
 
+export interface RemoteInboxMessage {
+  id: string
+  agentName: string
+  message: string
+  priority: string
+  createdAt: string
+  readAt?: string
+  // If this message is wrapping a proposal, the renderer/3DS should render
+  // approve/reject UI. proposalId points to the underlying TeamProposal.
+  proposalId?: string
+  // Lightweight summary of the proposed team so the 3DS can show it without
+  // a second roundtrip. Pulled from the linked TeamProposal at read time.
+  proposalSummary?: string
+  proposalAgents?: Array<{ name: string; cli: string; model?: string; role: string }>
+  proposalStatus?: string
+}
+
 export interface RemoteServerDeps {
   tokenManager: TokenManager
   getProjectName: () => string
@@ -77,6 +94,18 @@ export interface RemoteServerDeps {
   }) => void
   onWorkshopPanelToggle: (update: { type: string; action: 'open' | 'close' | 'toggle' }) => void
   getAgentLayouts: () => Record<string, { x: number; y: number; width: number; height: number; color: string }>
+  // ── Inbox + team proposals (Phase 4a) ────────────────────────────────────
+  // Lets the 3DS show a unified inbox of orchestrator notifications and
+  // pending team proposals, plus respond inline (mark-read or approve/reject)
+  // without bouncing back to the desktop UI.
+  getInboxMessages: () => RemoteInboxMessage[]
+  getInboxUnreadCount: () => number
+  markInboxRead: (id: string) => boolean
+  // For proposal messages only. Approve = spawn the team as-is from the
+  // stored proposal (no per-agent edit on 3DS — too cramped). Reject sends
+  // the optional feedback back to the proposing orchestrator.
+  approveProposal: (proposalId: string) => Promise<{ success: boolean; error?: string; spawned?: number }>
+  rejectProposal: (proposalId: string, feedback?: string) => { success: boolean; error?: string }
 }
 
 // Find the static directory at runtime. In electron-vite dev mode, __dirname
@@ -287,6 +316,13 @@ export class RemoteServer {
         }
       }
 
+      // Send the most recent N inbox messages inline so the 3DS canvas can
+      // show an Inbox panel card with a badge on the first poll. The full
+      // list is available via GET /inbox if the user opens the detail view.
+      const allInbox = this.deps.getInboxMessages()
+      const inboxRecent = allInbox.slice(0, 20)
+      const inboxUnread = this.deps.getInboxUnreadCount()
+
       const snapshot = {
         projectName: this.deps.getProjectName(),
         agents,
@@ -297,9 +333,64 @@ export class RemoteServer {
         serverTime: Date.now(),
         sessionExpiresAt: this.deps.tokenManager.getExpiresAt(),
         workshopPasscodeSet: this.deps.getWorkshopPasscodeSet(),
-        presets: this.deps.getPresets()
+        presets: this.deps.getPresets(),
+        inbox: inboxRecent,
+        inboxUnread
       }
       res.json(snapshot)
+    })
+
+    // ── Inbox + team proposal endpoints (Phase 4a) ───────────────────────
+    // Read-only list (full, not the snapshot's truncated tail).
+    this.app.get('/r/:token/inbox', (_req: Request, res: Response) => {
+      res.json({ messages: this.deps.getInboxMessages(), unread: this.deps.getInboxUnreadCount() })
+    })
+
+    // Mark a single message as read. Idempotent; returning ok even if the
+    // id no longer exists keeps the 3DS happy under retry.
+    this.app.post('/r/:token/inbox/:id/read', (req: Request, res: Response) => {
+      try {
+        this.deps.markInboxRead(req.params.id)
+        res.json({ success: true })
+      } catch (err: any) {
+        res.status(500).json({ success: false, error: err?.message || 'Failed to mark read' })
+      }
+    })
+
+    // Respond to a proposal-type message. Body: { action: 'approve' | 'reject', feedback?: string }
+    // For non-proposal messages this is a no-op past the read mark.
+    this.app.post('/r/:token/inbox/:id/respond', async (req: Request, res: Response) => {
+      const { action, feedback, proposalId } = req.body ?? {}
+      if (action !== 'approve' && action !== 'reject') {
+        res.status(400).json({ success: false, error: "action must be 'approve' or 'reject'" })
+        return
+      }
+      // proposalId comes from the inbox message wrapper. Fall back to
+      // looking it up from the inbox list by message id if the 3DS forgot.
+      let pid = typeof proposalId === 'string' ? proposalId : undefined
+      if (!pid) {
+        const msg = this.deps.getInboxMessages().find(m => m.id === req.params.id)
+        pid = msg?.proposalId
+      }
+      if (!pid) {
+        res.status(400).json({ success: false, error: 'message has no proposal to respond to' })
+        return
+      }
+      try {
+        if (action === 'approve') {
+          const result = await this.deps.approveProposal(pid)
+          // Mark the wrapper message read once the proposal is resolved so
+          // the badge clears on the next poll.
+          try { this.deps.markInboxRead(req.params.id) } catch { /* ignore */ }
+          res.json(result)
+        } else {
+          const result = this.deps.rejectProposal(pid, typeof feedback === 'string' ? feedback : undefined)
+          try { this.deps.markInboxRead(req.params.id) } catch { /* ignore */ }
+          res.json(result)
+        }
+      } catch (err: any) {
+        res.status(500).json({ success: false, error: err?.message || 'Respond failed' })
+      }
     })
 
     // ── Workshop endpoints ────────────────────────────────────────────────
