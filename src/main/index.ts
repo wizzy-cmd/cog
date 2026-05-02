@@ -6,6 +6,9 @@ import { createDatabase } from './db/database'
 import { MessageStore } from './db/message-store'
 import { PinboardStore } from './db/pinboard-store'
 import { InfoStore } from './db/info-store'
+import { InboxStore } from './db/inbox-store'
+import { ProposalsStore } from './db/proposals-store'
+import { meetsThreshold } from './hub/inbox-channel'
 import { createHubServer, type HubServer } from './hub/server'
 import { spawnAgentPty, writeToPty, resizePty, killPty, type ManagedPty } from './shell/pty-manager'
 import { buildCliLaunchCommands as buildCliLaunchCommandsForConfig } from './cli-launch'
@@ -31,7 +34,7 @@ import * as themesStore from './themes/themes-store'
 import * as workspaceThemeStore from './themes/workspace-theme-store'
 import { getWorkspaceThemeById, WORKSPACE_THEMES } from '../shared/workspace-themes'
 import { migrateLegacyUserData } from './migration/userdata-migration'
-import type { AgentConfig, AgentTheme, RemoteSetupProgress, CommunityAgent, CommunityCategory, RespawnResult } from '../shared/types'
+import type { AgentConfig, AgentTheme, RemoteSetupProgress, CommunityAgent, CommunityCategory, RespawnResult, NotificationThreshold, ProposedAgent, TeamProposal } from '../shared/types'
 import { IPC } from '../shared/types'
 import { validateRespawnRequest } from './respawn-validation'
 
@@ -44,6 +47,8 @@ let updateChecker: UpdateChecker
 let currentDb: import('better-sqlite3').Database | null = null
 let currentMessageStore: MessageStore | null = null
 let currentSchedulesStore: SchedulesStore | null = null
+let currentInboxStore: InboxStore | null = null
+let currentProposalsStore: ProposalsStore | null = null
 let promptScheduler: PromptScheduler | null = null
 const agents = new Map<string, ManagedPty>()
 const hasReceivedInitialPrompt = new Set<string>()
@@ -817,6 +822,32 @@ function reconnectAgent(config: AgentConfig): void {
   console.log(`Agent "${config.name}" reconnected successfully`)
 }
 
+// Role-based ordering for grid-laying out an approved team — orchestrator
+// first (top-left), then workers, reviewers, researchers, then anything else
+// in insertion order. Free-form roles fall into the 'other' bucket.
+const ROLE_ORDER: Record<string, number> = {
+  orchestrator: 0,
+  worker: 1,
+  reviewer: 2,
+  researcher: 3
+}
+function roleRank(role: string): number {
+  const key = (role || '').trim().toLowerCase()
+  return ROLE_ORDER[key] ?? 99
+}
+
+// If an orchestrator proposes a team using a name that's already in use,
+// suffix it with a counter so the spawn doesn't collide. Falls back to the
+// raw name if no collisions exist.
+function uniqueAgentName(desired: string): string {
+  if (!hub.registry.get(desired)) return desired
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${desired}-${i}`
+    if (!hub.registry.get(candidate)) return candidate
+  }
+  return `${desired}-${Date.now()}`
+}
+
 // Shared spawn logic used by the IPC handler (desktop) and the Remote View
 // workshop spawn endpoint (mobile). Preserves all side effects: MCP config,
 // hub registration, skill prompt composition, PTY lifecycle wiring, CLI
@@ -1136,6 +1167,10 @@ async function openProject(projectPath: string): Promise<void> {
   currentMessageStore = messageStore
   const pinboardStore = new PinboardStore(db)
   const infoStore = new InfoStore(db)
+  const inboxStore = new InboxStore(db)
+  const proposalsStore = new ProposalsStore(db)
+  currentInboxStore = inboxStore
+  currentProposalsStore = proposalsStore
   currentSchedulesStore = new SchedulesStore(db)
 
   hub = await createHubServer()
@@ -1161,6 +1196,8 @@ async function openProject(projectPath: string): Promise<void> {
   // Restore persisted state
   hub.pinboard.loadTasks(pinboardStore.loadTasks())
   hub.infoChannel.loadEntries(infoStore.loadEntries())
+  hub.inboxChannel.loadMessages(inboxStore.loadMessages())
+  hub.proposalsChannel.loadProposals(proposalsStore.loadAll())
 
   // Hook persistence callbacks
   hub.messages.onMessageSaved = (msg) => messageStore.saveMessage(msg)
@@ -1216,6 +1253,52 @@ async function openProject(projectPath: string): Promise<void> {
     infoStore.saveEntry(entry)
     mainWindow?.webContents.send(IPC.INFO_ENTRY_ADDED, hub.infoChannel.readInfo())
     hub.agentMetrics.increment(entry.from, 'infoPosted')
+  }
+
+  hub.inboxChannel.onMessageAdded = (msg) => {
+    inboxStore.saveMessage(msg)
+    mainWindow?.webContents.send(IPC.INBOX_MESSAGE_ADDED, hub.inboxChannel.readAll())
+    // Native notification if message priority meets the user-set threshold
+    // (default 'high'). 'none' disables entirely.
+    const settings = loadSettings()
+    const threshold = (settings.inboxNotifyThreshold || 'high') as NotificationThreshold
+    if (threshold !== 'none' && meetsThreshold(msg.priority, threshold)) {
+      try {
+        const n = new Notification({
+          title: `Inbox · ${msg.priority.toUpperCase()} from ${msg.agentName}`,
+          body: msg.message.length > 200 ? msg.message.slice(0, 200) + '…' : msg.message,
+          urgency: msg.priority === 'urgent' ? 'critical' : 'normal'
+        })
+        n.on('click', () => { mainWindow?.show(); mainWindow?.focus() })
+        n.show()
+      } catch { /* notifications may be disabled at OS level */ }
+    }
+  }
+  hub.inboxChannel.onMessageUpdated = (msg) => {
+    inboxStore.markRead(msg.id, msg.readAt ?? new Date().toISOString())
+    mainWindow?.webContents.send(IPC.INBOX_MESSAGE_UPDATED, hub.inboxChannel.readAll())
+  }
+  hub.inboxChannel.onMessageDeleted = (id) => {
+    inboxStore.deleteMessage(id)
+    mainWindow?.webContents.send(IPC.INBOX_MESSAGE_UPDATED, hub.inboxChannel.readAll())
+  }
+
+  hub.proposalsChannel.onProposalAdded = (proposal) => {
+    proposalsStore.saveProposal(proposal)
+    mainWindow?.webContents.send(IPC.PROPOSAL_ADDED, proposal)
+    // Show the main window so the user notices the modal
+    if (mainWindow && !mainWindow.isFocused()) {
+      mainWindow.show()
+      mainWindow.flashFrame(true)
+    }
+  }
+  hub.proposalsChannel.onProposalResolved = (proposal) => {
+    proposalsStore.updateStatus(
+      proposal.id,
+      proposal.status,
+      proposal.resolvedAt ?? new Date().toISOString(),
+      proposal.feedback
+    )
   }
 
   hub.setOutputAccessor((agentName, lines) => {
@@ -1301,6 +1384,8 @@ async function closeProject(): Promise<void> {
     currentDb.close()
     currentDb = null
     currentMessageStore = null
+    currentInboxStore = null
+    currentProposalsStore = null
   }
 
   // Notify renderer
@@ -1691,6 +1776,121 @@ function setupIPC(): void {
   ipcMain.handle(IPC.SETTINGS_SET, (_event, key: string, value: any) => {
     saveSetting(key, value)
     return { status: 'ok' }
+  })
+
+  // ── Inbox IPC ──────────────────────────────────────────────────────────────
+  ipcMain.handle(IPC.INBOX_LIST, () => hub?.inboxChannel.readAll() ?? [])
+  ipcMain.handle(IPC.INBOX_MARK_READ, (_event, id: string) => {
+    return hub?.inboxChannel.markRead(id) ?? null
+  })
+  ipcMain.handle(IPC.INBOX_MARK_ALL_READ, () => {
+    return hub?.inboxChannel.markAllRead() ?? 0
+  })
+  ipcMain.handle(IPC.INBOX_DELETE, (_event, id: string) => {
+    return hub?.inboxChannel.deleteMessage(id) ?? false
+  })
+  ipcMain.handle(IPC.INBOX_REPLY, (_event, payload: { agentName: string; message: string }) => {
+    if (!hub || !payload?.agentName || !payload?.message) return { success: false, error: 'Invalid reply' }
+    // Send a regular hub message from "user" to the orchestrator. Reuses the
+    // same path the renderer already uses for HUB_SEND_MESSAGE.
+    try {
+      hub.messages.send('user', payload.agentName, payload.message)
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Send failed' }
+    }
+  })
+  ipcMain.handle(IPC.INBOX_GET_NOTIFY_THRESHOLD, () => {
+    const settings = loadSettings()
+    return (settings.inboxNotifyThreshold || 'high') as NotificationThreshold
+  })
+  ipcMain.handle(IPC.INBOX_SET_NOTIFY_THRESHOLD, (_event, threshold: NotificationThreshold) => {
+    const valid: NotificationThreshold[] = ['none', 'low', 'normal', 'high', 'urgent']
+    if (!valid.includes(threshold)) return { success: false, error: 'Invalid threshold' }
+    saveSetting('inboxNotifyThreshold', threshold)
+    return { success: true }
+  })
+
+  // ── Team proposals IPC ─────────────────────────────────────────────────────
+  ipcMain.handle(IPC.PROPOSALS_LIST_PENDING, () => hub?.proposalsChannel.listPending() ?? [])
+  ipcMain.handle(IPC.PROPOSALS_GET, (_event, id: string) => {
+    return hub?.proposalsChannel.get(id) ?? null
+  })
+  ipcMain.handle(IPC.PROPOSALS_APPROVE, async (_event, payload: {
+    proposalId: string
+    approvedAgentNames: string[]
+    tabId?: string
+  }) => {
+    if (!hub) return { success: false, error: 'Hub not ready' }
+    const proposal = hub.proposalsChannel.get(payload.proposalId)
+    if (!proposal) return { success: false, error: 'Proposal not found' }
+    if (proposal.status !== 'pending') {
+      return { success: false, error: `Proposal already ${proposal.status}` }
+    }
+
+    const approvedSet = new Set(payload.approvedAgentNames.map(n => n.trim().toLowerCase()))
+    const toSpawn = proposal.agents.filter(a => approvedSet.has(a.name.trim().toLowerCase()))
+    if (toSpawn.length === 0) {
+      hub.proposalsChannel.resolve(payload.proposalId, 'rejected', 'No agents selected')
+      return { success: false, error: 'No agents selected' }
+    }
+
+    // Sort by role priority so the orchestrator lands top-left, workers next, etc.
+    const ordered = [...toSpawn].sort((a, b) => roleRank(a.role) - roleRank(b.role))
+    const tabId = payload.tabId || 'tab-default'
+    const cwd = projectManager.currentProject?.path || process.cwd()
+
+    const spawned: Array<{ agentId: string; name: string; gridIndex: number }> = []
+    for (let i = 0; i < ordered.length; i++) {
+      const a = ordered[i]
+      const config: AgentConfig = {
+        id: uuidv4(),
+        name: uniqueAgentName(a.name),
+        cli: a.cli,
+        cwd,
+        role: a.role,
+        ceoNotes: a.ceoNotes,
+        shell: a.shell || (process.platform === 'win32' ? 'powershell' : 'bash'),
+        admin: false,
+        autoMode: a.autoMode,
+        model: a.model,
+        providerUrl: a.providerUrl,
+        skills: a.skills,
+        tabId,
+        theme: a.theme
+      }
+      try {
+        const result = handleSpawnAgent(config)
+        spawned.push({ agentId: result.id, name: config.name, gridIndex: i })
+      } catch (err: any) {
+        console.error(`[proposals:approve] spawn failed for ${a.name}:`, err?.message)
+      }
+    }
+
+    hub.proposalsChannel.resolve(payload.proposalId, 'approved')
+
+    // Send confirmation back to the orchestrator so they know the team booted
+    try {
+      const summary = spawned.length === ordered.length
+        ? `User approved your team. Spawned: ${spawned.map(s => s.name).join(', ')}.`
+        : `User approved part of your team. Spawned ${spawned.length}/${ordered.length}: ${spawned.map(s => s.name).join(', ')}.`
+      hub.messages.send('user', proposal.proposedBy, summary)
+    } catch { /* orchestrator may not be reachable */ }
+
+    return { success: true, spawned, totalRequested: ordered.length }
+  })
+  ipcMain.handle(IPC.PROPOSALS_REJECT, (_event, payload: { proposalId: string; feedback?: string }) => {
+    if (!hub) return { success: false, error: 'Hub not ready' }
+    const resolved = hub.proposalsChannel.resolve(payload.proposalId, 'rejected', payload.feedback)
+    if (!resolved) return { success: false, error: 'Proposal not found' }
+    // Tell the orchestrator the user said no, with their feedback if provided
+    try {
+      const note = payload.feedback
+        ? `User rejected your team proposal. Feedback: ${payload.feedback}`
+        : 'User rejected your team proposal.'
+      hub.messages.send('user', resolved.proposedBy, note)
+    } catch { /* orchestrator may not be reachable */ }
+    return { success: true }
   })
 
   // Workshop passcode IPC

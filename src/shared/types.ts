@@ -216,6 +216,22 @@ export const IPC = {
   COMMUNITY_THEME_TOGGLE_STAR: 'community-theme:toggle-star',
   // Machine identity (trollbox / community starring)
   GET_MACHINE_HASH: 'get-machine-hash',
+  // Inbox: orchestrator → user direct channel
+  INBOX_LIST: 'inbox:list',
+  INBOX_MARK_READ: 'inbox:mark-read',
+  INBOX_MARK_ALL_READ: 'inbox:mark-all-read',
+  INBOX_DELETE: 'inbox:delete',
+  INBOX_REPLY: 'inbox:reply',
+  INBOX_MESSAGE_ADDED: 'inbox:message-added',
+  INBOX_MESSAGE_UPDATED: 'inbox:message-updated',
+  INBOX_GET_NOTIFY_THRESHOLD: 'inbox:get-notify-threshold',
+  INBOX_SET_NOTIFY_THRESHOLD: 'inbox:set-notify-threshold',
+  // Team proposals: orchestrator-suggested teams pending user approval
+  PROPOSALS_LIST_PENDING: 'proposals:list-pending',
+  PROPOSALS_GET: 'proposals:get',
+  PROPOSALS_APPROVE: 'proposals:approve',
+  PROPOSALS_REJECT: 'proposals:reject',
+  PROPOSAL_ADDED: 'proposals:added',
 } as const
 
 export interface Skill {

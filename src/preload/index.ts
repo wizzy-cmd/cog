@@ -72,6 +72,37 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(IPC.INFO_ENTRY_ADDED, handler)
     return () => ipcRenderer.removeListener(IPC.INFO_ENTRY_ADDED, handler)
   },
+  // Inbox
+  inboxList: () => ipcRenderer.invoke(IPC.INBOX_LIST),
+  inboxMarkRead: (id: string) => ipcRenderer.invoke(IPC.INBOX_MARK_READ, id),
+  inboxMarkAllRead: () => ipcRenderer.invoke(IPC.INBOX_MARK_ALL_READ),
+  inboxDelete: (id: string) => ipcRenderer.invoke(IPC.INBOX_DELETE, id),
+  inboxReply: (agentName: string, message: string) =>
+    ipcRenderer.invoke(IPC.INBOX_REPLY, { agentName, message }),
+  inboxGetNotifyThreshold: () => ipcRenderer.invoke(IPC.INBOX_GET_NOTIFY_THRESHOLD),
+  inboxSetNotifyThreshold: (t: string) => ipcRenderer.invoke(IPC.INBOX_SET_NOTIFY_THRESHOLD, t),
+  onInboxMessageAdded: (callback: (msgs: unknown[]) => void) => {
+    const handler = (_event: unknown, msgs: unknown[]) => callback(msgs)
+    ipcRenderer.on(IPC.INBOX_MESSAGE_ADDED, handler)
+    return () => ipcRenderer.removeListener(IPC.INBOX_MESSAGE_ADDED, handler)
+  },
+  onInboxMessageUpdated: (callback: (msgs: unknown[]) => void) => {
+    const handler = (_event: unknown, msgs: unknown[]) => callback(msgs)
+    ipcRenderer.on(IPC.INBOX_MESSAGE_UPDATED, handler)
+    return () => ipcRenderer.removeListener(IPC.INBOX_MESSAGE_UPDATED, handler)
+  },
+  // Team proposals
+  proposalsListPending: () => ipcRenderer.invoke(IPC.PROPOSALS_LIST_PENDING),
+  proposalsGet: (id: string) => ipcRenderer.invoke(IPC.PROPOSALS_GET, id),
+  proposalsApprove: (proposalId: string, approvedAgentNames: string[], tabId?: string) =>
+    ipcRenderer.invoke(IPC.PROPOSALS_APPROVE, { proposalId, approvedAgentNames, tabId }),
+  proposalsReject: (proposalId: string, feedback?: string) =>
+    ipcRenderer.invoke(IPC.PROPOSALS_REJECT, { proposalId, feedback }),
+  onProposalAdded: (callback: (proposal: unknown) => void) => {
+    const handler = (_event: unknown, proposal: unknown) => callback(proposal)
+    ipcRenderer.on(IPC.PROPOSAL_ADDED, handler)
+    return () => ipcRenderer.removeListener(IPC.PROPOSAL_ADDED, handler)
+  },
   // Groups
   getGroups: () => ipcRenderer.invoke(IPC.GROUP_GET_ALL),
   getLinks: () => ipcRenderer.invoke(IPC.GROUP_GET_LINKS),

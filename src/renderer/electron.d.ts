@@ -1,4 +1,4 @@
-import type { AgentConfig, AgentState, AgentTheme, HubInfo, PinboardTask, InfoEntry, WorkspacePreset, WorkspaceTheme, Skill, CreateScheduleInput, EditScheduleInput, CommunityTeam, CommunityTeamListItem, CommunityAgent, CommunityCategory, CommunityTheme, CommunityThemeListItem, RespawnResult } from '../shared/types'
+import type { AgentConfig, AgentState, AgentTheme, HubInfo, PinboardTask, InfoEntry, WorkspacePreset, WorkspaceTheme, Skill, CreateScheduleInput, EditScheduleInput, CommunityTeam, CommunityTeamListItem, CommunityAgent, CommunityCategory, CommunityTheme, CommunityThemeListItem, RespawnResult, InboxMessage, NotificationThreshold, TeamProposal } from '../shared/types'
 
 declare global {
   interface Window {
@@ -20,6 +20,27 @@ declare global {
       onPinboardUpdate: (callback: (tasks: PinboardTask[]) => void) => () => void
       getInfoEntries: (tabId?: string) => Promise<InfoEntry[]>
       onInfoUpdate: (callback: (entries: InfoEntry[]) => void) => () => void
+      // Inbox
+      inboxList: () => Promise<InboxMessage[]>
+      inboxMarkRead: (id: string) => Promise<InboxMessage | null>
+      inboxMarkAllRead: () => Promise<number>
+      inboxDelete: (id: string) => Promise<boolean>
+      inboxReply: (agentName: string, message: string) => Promise<{ success: boolean; error?: string }>
+      inboxGetNotifyThreshold: () => Promise<NotificationThreshold>
+      inboxSetNotifyThreshold: (t: NotificationThreshold) => Promise<{ success: boolean; error?: string }>
+      onInboxMessageAdded: (callback: (msgs: InboxMessage[]) => void) => () => void
+      onInboxMessageUpdated: (callback: (msgs: InboxMessage[]) => void) => () => void
+      // Team proposals
+      proposalsListPending: () => Promise<TeamProposal[]>
+      proposalsGet: (id: string) => Promise<TeamProposal | null>
+      proposalsApprove: (proposalId: string, approvedAgentNames: string[], tabId?: string) => Promise<{
+        success: boolean
+        error?: string
+        spawned?: Array<{ agentId: string; name: string; gridIndex: number }>
+        totalRequested?: number
+      }>
+      proposalsReject: (proposalId: string, feedback?: string) => Promise<{ success: boolean; error?: string }>
+      onProposalAdded: (callback: (proposal: TeamProposal) => void) => () => void
       onPtyOutput: (callback: (agentId: string, data: string) => void) => () => void
       onPtyExit: (callback: (agentId: string, exitCode: number | undefined) => void) => () => void
       onAgentStateUpdate: (callback: (agents: AgentState[]) => void) => () => void
