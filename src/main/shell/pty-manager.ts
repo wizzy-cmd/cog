@@ -24,6 +24,7 @@ interface SpawnOptions {
 
 function resolveShell(config: AgentConfig): string {
   if (process.platform === 'win32') {
+    if (config.shell === 'wsl') return 'wsl.exe'
     return config.shell === 'cmd' ? 'cmd.exe' : 'powershell.exe'
   }
 

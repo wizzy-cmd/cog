@@ -30,7 +30,7 @@ export interface AgentConfig {
   cwd: string
   role: string
   ceoNotes: string
-  shell: 'cmd' | 'powershell' | 'bash' | 'zsh' | 'fish'  // which shell to spawn the agent in
+  shell: 'cmd' | 'powershell' | 'wsl' | 'bash' | 'zsh' | 'fish'  // which shell to spawn the agent in
   admin: boolean
   autoMode: boolean    // --dangerously-skip-permissions (Claude), --yolo (Codex), etc.
   promptRegex?: string
@@ -353,7 +353,7 @@ export interface CommunityAgent {
   cli: string
   role: string
   ceoNotes: string
-  shell: 'cmd' | 'powershell' | 'bash' | 'zsh' | 'fish'
+  shell: 'cmd' | 'powershell' | 'wsl' | 'bash' | 'zsh' | 'fish'
   admin: boolean
   autoMode: boolean
   model?: string

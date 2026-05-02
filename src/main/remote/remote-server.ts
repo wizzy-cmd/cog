@@ -65,7 +65,7 @@ export interface RemoteServerDeps {
     ceoNotes: string
     autoMode: boolean
     skills?: string[]
-    shell?: 'cmd' | 'powershell' | 'bash' | 'zsh' | 'fish'
+    shell?: 'cmd' | 'powershell' | 'wsl' | 'bash' | 'zsh' | 'fish'
     cwd?: string
   }) => Promise<{ success: boolean; agentId?: string; error?: string }>
   onWorkshopWindowUpdate: (update: {

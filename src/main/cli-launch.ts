@@ -53,7 +53,7 @@ function buildCodexCleanupCmd(shell: AgentConfig['shell']): string {
   if (shell === 'fish') {
     return `codex mcp list 2>/dev/null | grep -E '^(cog|agentorch)' | awk '{print $1}' | while read name; codex mcp remove $name 2>/dev/null; end`
   }
-  // bash, zsh
+  // bash, zsh, wsl (WSL gives a bash login shell on Windows)
   return `codex mcp list 2>/dev/null | grep -E '^(cog|agentorch)' | awk '{print $1}' | while read name; do codex mcp remove "$name" 2>/dev/null; done`
 }
 
@@ -70,8 +70,26 @@ function buildGeminiCleanupCmd(shell: AgentConfig['shell']): string {
   if (shell === 'fish') {
     return `gemini mcp list 2>/dev/null | grep -oE '(cog|agentorch)-[^ :]*' | while read name; gemini mcp remove $name 2>/dev/null; end`
   }
-  // bash, zsh
+  // bash, zsh, wsl (WSL gives a bash login shell on Windows)
   return `gemini mcp list 2>/dev/null | grep -oE '(cog|agentorch)-[^ :]*' | while read name; do gemini mcp remove "$name" 2>/dev/null; done`
+}
+
+/**
+ * Convert a Windows path (`C:\Users\X\foo\bar`) to its WSL mount equivalent
+ * (`/mnt/c/Users/X/foo/bar`). When the user picks the WSL shell on Windows,
+ * commands run inside the Linux distro — so any host-side absolute paths we
+ * splice into commands (MCP config file, MCP server bundle) need translation
+ * or the inner CLI will fail with "file not found".
+ *
+ * Non-Windows-style paths (already POSIX, UNC paths) are returned unchanged.
+ */
+function toWslPath(winPath: string): string {
+  if (!winPath) return winPath
+  // Already POSIX-style — leave alone.
+  if (winPath.startsWith('/')) return winPath
+  return winPath
+    .replace(/^([A-Za-z]):/, (_, drive: string) => `/mnt/${drive.toLowerCase()}`)
+    .replace(/\\/g, '/')
 }
 
 export function buildCliLaunchCommands(
@@ -95,15 +113,23 @@ export function buildCliLaunchCommands(
     throw new Error('cli-launch: hubPort must be an integer between 1 and 65535')
   }
 
+  // When launching inside WSL on Windows, every absolute Windows path we splice
+  // into a command must be rewritten to /mnt/<drive>/... so the Linux CLI inside
+  // the distro can resolve it. The PTY itself is `wsl.exe`, but the commands
+  // we type land in a bash login shell where `C:\...` is meaningless.
+  const isWsl = config.shell === 'wsl'
+  const mcpConfigArg = isWsl ? toWslPath(mcpConfigPath) : mcpConfigPath
+  const mcpServerArg = isWsl ? toWslPath(mcpServerPath) : mcpServerPath
+
   if (cliBase === 'claude') {
-    const parts = [`claude --mcp-config "${mcpConfigPath}"`]
+    const parts = [`claude --mcp-config "${mcpConfigArg}"`]
     if (safeModel) parts[0] += ` --model ${safeModel}`
     if (config.autoMode) parts[0] += ' --dangerously-skip-permissions'
     return parts
   }
 
   if (cliBase === 'openclaude') {
-    const parts = [`openclaude --mcp-config "${mcpConfigPath}"`]
+    const parts = [`openclaude --mcp-config "${mcpConfigArg}"`]
     if (safeModel) parts[0] += ` --model ${safeModel}`
     if (config.autoMode) parts[0] += ' --dangerously-skip-permissions'
     return parts
@@ -113,7 +139,7 @@ export function buildCliLaunchCommands(
     const mcpName = `cog-${config.name.replace(/\s+/g, '-')}`
     const cmds = [
       buildMcpCleanupCmd('codex', config.shell),
-      `codex mcp add ${mcpName} -- node "${mcpServerPath}" ${hubPort} ${safeSecret} ${safeId} ${config.name}`,
+      `codex mcp add ${mcpName} -- node "${mcpServerArg}" ${hubPort} ${safeSecret} ${safeId} ${config.name}`,
     ]
     let codexCmd = 'codex'
     if (safeModel) codexCmd += ` -m ${safeModel}`
@@ -123,7 +149,7 @@ export function buildCliLaunchCommands(
   }
 
   if (cliBase === 'kimi') {
-    let cmd = `kimi --mcp-config-file "${mcpConfigPath}"`
+    let cmd = `kimi --mcp-config-file "${mcpConfigArg}"`
     if (safeModel) cmd += ` --model ${safeModel}`
     if (config.autoMode) cmd += ' --yolo'
     return [cmd]
@@ -152,7 +178,7 @@ export function buildCliLaunchCommands(
     const encodedName = encodeURIComponent(config.name).replace(/[!*'()]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())
     const cmds = [
       buildMcpCleanupCmd('gemini', config.shell),
-      `gemini mcp add ${mcpName} -e COG_HUB_PORT=${hubPort} -e COG_HUB_SECRET=${safeSecret} -e COG_AGENT_ID=${safeId} -e COG_AGENT_NAME_ENC=${encodedName} -e AGENTORCH_HUB_PORT=${hubPort} -e AGENTORCH_HUB_SECRET=${safeSecret} -e AGENTORCH_AGENT_ID=${safeId} -e AGENTORCH_AGENT_NAME_ENC=${encodedName} node "${mcpServerPath}"`,
+      `gemini mcp add ${mcpName} -e COG_HUB_PORT=${hubPort} -e COG_HUB_SECRET=${safeSecret} -e COG_AGENT_ID=${safeId} -e COG_AGENT_NAME_ENC=${encodedName} -e AGENTORCH_HUB_PORT=${hubPort} -e AGENTORCH_HUB_SECRET=${safeSecret} -e AGENTORCH_AGENT_ID=${safeId} -e AGENTORCH_AGENT_NAME_ENC=${encodedName} node "${mcpServerArg}"`,
     ]
     let geminiCmd = 'gemini'
     if (safeModel) geminiCmd += ` --model ${safeModel}`
@@ -162,7 +188,7 @@ export function buildCliLaunchCommands(
   }
 
   if (cliBase === 'copilot') {
-    let cmd = `copilot --additional-mcp-config "@${mcpConfigPath}"`
+    let cmd = `copilot --additional-mcp-config "@${mcpConfigArg}"`
     if (safeModel) cmd += ` --model=${safeModel}`
     if (config.autoMode) cmd += ' --allow-all'
     return [cmd]

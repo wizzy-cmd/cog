@@ -33,6 +33,7 @@ export const CLI_MODELS: Record<string, { label: string; value: string }[]> = {
   ],
   codex: [
     { label: 'o4-mini (default)', value: '' },
+    { label: 'GPT-5.5', value: 'gpt-5.5' },
     { label: 'GPT-5.4', value: 'gpt-5.4' },
     { label: 'GPT-5', value: 'gpt-5' },
     { label: 'o3', value: 'o3' },
@@ -55,6 +56,7 @@ export const CLI_MODELS: Record<string, { label: string; value: string }[]> = {
   ],
   copilot: [
     { label: 'Default (Copilot model)', value: '' },
+    { label: 'GPT-5.5', value: 'gpt-5.5' },
     { label: 'GPT-5.4', value: 'gpt-5.4' },
     { label: 'GPT-5', value: 'gpt-5' },
     { label: 'GPT-4o', value: 'gpt-4o' },
@@ -69,6 +71,7 @@ export const CLI_MODELS: Record<string, { label: string; value: string }[]> = {
   ],
   openclaude: [
     // OpenAI
+    { label: 'GPT-5.5', value: 'gpt-5.5' },
     { label: 'GPT-5.4', value: 'gpt-5.4' },
     { label: 'GPT-5', value: 'gpt-5' },
     { label: 'GPT-4o', value: 'gpt-4o' },
@@ -109,7 +112,7 @@ export const OPENCLAUDE_PROVIDERS: { label: string; url: string }[] = [
   { label: 'Custom URL', url: '' },
 ]
 
-const WINDOWS_SHELLS: AgentConfig['shell'][] = ['powershell', 'cmd']
+const WINDOWS_SHELLS: AgentConfig['shell'][] = ['powershell', 'cmd', 'wsl']
 const POSIX_SHELLS: AgentConfig['shell'][] = ['bash', 'zsh', 'fish']
 
 export interface AgentConfigFormValue {
@@ -407,13 +410,16 @@ export function AgentConfigForm({ value, onChange, errors }: AgentConfigFormProp
                 <option key={option} value={option}>
                   {option === 'powershell' ? 'PowerShell' :
                    option === 'cmd' ? 'Command Prompt (cmd)' :
+                   option === 'wsl' ? 'WSL (recommended for Codex on Windows)' :
                    option === 'bash' ? 'Bash' :
                    option === 'zsh' ? 'Zsh' : 'Fish'}
                 </option>
               ))}
             </select>
             <span style={{ color: '#555', fontSize: '11px' }}>
-              {isWindows ? 'Use cmd if a CLI is not found in PowerShell' : 'Pick the shell that matches your local CLI setup'}
+              {value.shell === 'wsl'
+                ? 'Runs the agent inside your default WSL distro (real Linux PTY — fixes the Codex Enter-key freeze on Windows). Requires WSL installed and codex/node available inside the distro. Windows paths like C:\\… are auto-translated to /mnt/c/…'
+                : isWindows ? 'Use cmd if a CLI is not found in PowerShell' : 'Pick the shell that matches your local CLI setup'}
             </span>
           </label>
           <label style={labelStyle}>
