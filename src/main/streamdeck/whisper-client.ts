@@ -1,3 +1,8 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { randomBytes } from 'node:crypto'
+
 export interface WhisperClient {
   transcribe(audio: ArrayBuffer): Promise<string>
 }
@@ -45,6 +50,36 @@ export class CloudWhisperClient implements WhisperClient {
       return (json.text ?? '').trim()
     } finally {
       clearTimeout(t)
+    }
+  }
+}
+
+export interface LocalWhisperOpts {
+  model?: string  // default: 'base.en'
+}
+
+export class LocalWhisperClient implements WhisperClient {
+  private model: string
+
+  constructor(opts: LocalWhisperOpts = {}) {
+    this.model = opts.model ?? 'base.en'
+  }
+
+  async transcribe(audio: ArrayBuffer): Promise<string> {
+    const tmp = path.join(os.tmpdir(), `cog-whisper-${randomBytes(6).toString('hex')}.webm`)
+    fs.writeFileSync(tmp, Buffer.from(audio))
+    try {
+      const { nodewhisper } = await import('nodejs-whisper')
+      const result = await nodewhisper(tmp, {
+        modelName: this.model,
+        autoDownloadModelName: this.model,
+        removeWavFileAfterTranscription: true,
+        withCuda: false,
+        whisperOptions: { outputInText: true, outputInJson: false },
+      } as Parameters<typeof nodewhisper>[1])
+      return (typeof result === 'string' ? result : '').trim()
+    } finally {
+      try { fs.rmSync(tmp, { force: true }) } catch { /* best-effort */ }
     }
   }
 }
