@@ -237,6 +237,10 @@ export const IPC = {
   // state change. Send direction = main → renderer when 3DS posts a chat.
   TROLLBOX_STATE_PUSH: 'trollbox:state-push',
   TROLLBOX_REMOTE_SEND: 'trollbox:remote-send',
+  // Voice recorder — Stream Deck integration
+  VOICE_START: 'voice:start',
+  VOICE_STOP: 'voice:stop',
+  VOICE_AUDIO: 'voice:audio',
 } as const
 
 export interface Skill {

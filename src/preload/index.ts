@@ -245,4 +245,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitBranches: () => ipcRenderer.invoke(IPC.GIT_BRANCHES),
   gitCheckout: (branch: string) => ipcRenderer.invoke(IPC.GIT_CHECKOUT, branch),
   gitNewBranch: (name: string) => ipcRenderer.invoke(IPC.GIT_NEW_BRANCH, name),
+  // Voice recorder — Stream Deck integration
+  onVoiceStart: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on(IPC.VOICE_START, handler)
+    return () => ipcRenderer.removeListener(IPC.VOICE_START, handler)
+  },
+  onVoiceStop: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on(IPC.VOICE_STOP, handler)
+    return () => ipcRenderer.removeListener(IPC.VOICE_STOP, handler)
+  },
+  sendVoiceAudio: (audio: ArrayBuffer) => ipcRenderer.send(IPC.VOICE_AUDIO, audio),
 })
