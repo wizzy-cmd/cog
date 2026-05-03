@@ -162,6 +162,15 @@ export async function disposeStreamDeck(): Promise<void> {
   coord = null
 }
 
+export function getStreamDeckStatus(): 'connected' | 'disconnected' {
+  return bridge ? 'connected' : 'disconnected'
+}
+
+export async function reconnectStreamDeck(opts: InitOpts): Promise<void> {
+  await disposeStreamDeck()
+  await initStreamDeck(opts)
+}
+
 function buildWhisperClient(settings: { whisperBackend: string; openaiApiKey?: string }): WhisperClient | null {
   if (settings.whisperBackend === 'cloud') {
     const key = settings.openaiApiKey || process.env.OPENAI_API_KEY || ''

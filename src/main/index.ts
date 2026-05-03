@@ -37,7 +37,7 @@ import { migrateLegacyUserData } from './migration/userdata-migration'
 import type { AgentConfig, AgentTheme, RemoteSetupProgress, CommunityAgent, CommunityCategory, RespawnResult, NotificationThreshold, ProposedAgent, TeamProposal } from '../shared/types'
 import { IPC } from '../shared/types'
 import { validateRespawnRequest } from './respawn-validation'
-import { initStreamDeck, disposeStreamDeck, resolveCogsworthDir } from './streamdeck'
+import { initStreamDeck, disposeStreamDeck, resolveCogsworthDir, getStreamDeckStatus, reconnectStreamDeck } from './streamdeck'
 
 let hub: HubServer
 let mainWindow: BrowserWindow
@@ -2640,7 +2640,7 @@ async function main(): Promise<void> {
   }
 
   // Stream Deck integration — device claim + hotplug
-  await initStreamDeck({
+  const streamDeckInitOpts = {
     registry: hub.registry,
     listPresets: async () => {
       try {
@@ -2658,12 +2658,12 @@ async function main(): Promise<void> {
     }),
     settingsIO: {
       load: () => loadSettings(),
-      save: (next) => {
+      save: (next: Record<string, unknown>) => {
         for (const [k, v] of Object.entries(next)) saveSetting(k, v)
       },
     },
     actionDeps: {
-      killAgentByName: async (name) => {
+      killAgentByName: async (name: string) => {
         const managed = Array.from(agents.values()).find(m => m.config.name === name)
         if (managed) {
           manualKills.add(managed.config.id)
@@ -2681,7 +2681,7 @@ async function main(): Promise<void> {
           mainWindow?.webContents.send(IPC.AGENT_STATE_UPDATE, getVisibleAgents())
         }
       },
-      focusAgent: (name) => {
+      focusAgent: (name: string) => {
         mainWindow?.show()
         mainWindow?.focus()
         mainWindow?.webContents.send('streamdeck:focus-agent', name)
@@ -2710,22 +2710,26 @@ async function main(): Promise<void> {
         mainWindow?.webContents.send('streamdeck:mark-read', 'inbox')
       },
       markTrollboxRead: () => mainWindow?.webContents.send('streamdeck:mark-read', 'trollbox'),
-      loadPreset: async (name) => {
+      loadPreset: async (name: string) => {
         const preset = loadPreset(name)
         mainWindow?.webContents.send(IPC.LOAD_PRESET, preset)
       },
-      writeToOrchestratorPty: (text) => {
+      writeToOrchestratorPty: (text: string) => {
         const orch = Array.from(agents.values()).find(m => m.config.role === 'orchestrator')
         if (!orch) return false
         writeToPty(orch, text)
         return true
       },
-      notifyToast: (msg) => mainWindow?.webContents.send('streamdeck:toast', msg),
+      notifyToast: (msg: string) => mainWindow?.webContents.send('streamdeck:toast', msg),
       showMainWindow: () => { mainWindow?.show(); mainWindow?.focus() },
     },
     mainWindow: () => mainWindow ?? null,
     svgRoot: resolveCogsworthDir(),
-  }).catch(err => console.warn('[streamdeck] init error:', (err as Error).message))
+  }
+  await initStreamDeck(streamDeckInitOpts).catch(err => console.warn('[streamdeck] init error:', (err as Error).message))
+
+  ipcMain.handle(IPC.STREAMDECK_STATUS, () => getStreamDeckStatus())
+  ipcMain.handle(IPC.STREAMDECK_RECONNECT, () => reconnectStreamDeck(streamDeckInitOpts))
 }
 
 main()

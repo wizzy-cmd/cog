@@ -241,6 +241,9 @@ export const IPC = {
   VOICE_START: 'voice:start',
   VOICE_STOP: 'voice:stop',
   VOICE_AUDIO: 'voice:audio',
+  // Stream Deck status + reconnect
+  STREAMDECK_STATUS: 'streamdeck:status',
+  STREAMDECK_RECONNECT: 'streamdeck:reconnect',
 } as const
 
 export interface Skill {

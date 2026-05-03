@@ -155,6 +155,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Settings
   getSettings: () => ipcRenderer.invoke(IPC.SETTINGS_GET),
   setSetting: (key: string, value: unknown) => ipcRenderer.invoke(IPC.SETTINGS_SET, key, value),
+  // Stream Deck status + reconnect
+  getStreamDeckStatus: () => ipcRenderer.invoke(IPC.STREAMDECK_STATUS),
+  reconnectStreamDeck: () => ipcRenderer.invoke(IPC.STREAMDECK_RECONNECT),
   // Tabs
   getTabs: () => ipcRenderer.invoke(IPC.TAB_GET_ALL),
   createTab: (name?: string) => ipcRenderer.invoke(IPC.TAB_CREATE, name),
