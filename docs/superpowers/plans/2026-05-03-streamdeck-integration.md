@@ -633,7 +633,7 @@ import { describe, it, expect } from 'vitest'
 import { KeyRenderer } from '../../src/main/streamdeck/key-renderer'
 import path from 'node:path'
 
-const svgRoot = path.resolve(__dirname, '../../marketing/cogsworth')
+const svgRoot = path.resolve(__dirname, '../../src/main/streamdeck/assets/cogsworth')
 
 describe('KeyRenderer', () => {
   it('renders a 72x72 PNG buffer for a known SVG', async () => {
@@ -1460,7 +1460,7 @@ describe('StreamDeckBridge', () => {
       registry,
       listPresets: async () => [],
       getUnread: () => ({ inbox: 0, trollbox: 0, stale: 0 }),
-      svgRoot: 'marketing/cogsworth',
+      svgRoot: 'src/main/streamdeck/assets/cogsworth',
     })
     await bridge.start()
     expect(deck.setKeyImage).toHaveBeenCalledTimes(15)
@@ -1472,7 +1472,7 @@ describe('StreamDeckBridge', () => {
       registry,
       listPresets: async () => [],
       getUnread: () => ({ inbox: 0, trollbox: 0, stale: 0 }),
-      svgRoot: 'marketing/cogsworth',
+      svgRoot: 'src/main/streamdeck/assets/cogsworth',
     })
     await bridge.start()
     // Slot 0 should still be rendered (orchestrator-missing variant)
@@ -1629,7 +1629,7 @@ Append to `tests/unit/streamdeck-bridge.test.ts`:
       registry,
       listPresets: async () => [],
       getUnread: () => ({ inbox: 0, trollbox: 0, stale: 0 }),
-      svgRoot: 'marketing/cogsworth',
+      svgRoot: 'src/main/streamdeck/assets/cogsworth',
     })
     await bridge.start()
     deck.setKeyImage.mockClear()
@@ -1652,7 +1652,7 @@ Append to `tests/unit/streamdeck-bridge.test.ts`:
       registry,
       listPresets: async () => [],
       getUnread: () => ({ inbox: 0, trollbox: 0, stale: 0 }),
-      svgRoot: 'marketing/cogsworth',
+      svgRoot: 'src/main/streamdeck/assets/cogsworth',
     })
     await bridge.start()
     deck.setKeyImage.mockClear()
@@ -1882,7 +1882,7 @@ Append to `tests/unit/streamdeck-bridge.test.ts`:
       registry,
       listPresets: async () => [],
       getUnread: () => ({ inbox: 0, trollbox: 0, stale: 0 }),
-      svgRoot: 'marketing/cogsworth',
+      svgRoot: 'src/main/streamdeck/assets/cogsworth',
       actions: {
         onAgentTap, onAgentHold,
         onActionTap: vi.fn(), onActionHold: vi.fn(), onPresetTap: vi.fn(),
@@ -2225,9 +2225,9 @@ In `main()`, after the section where `hub` and existing IPC handlers are set up,
       },
     },
     mainWindow: () => BrowserWindow.getAllWindows()[0] ?? null,
-    svgRoot: app.isPackaged
-      ? path.join(process.resourcesPath, 'cogsworth')
-      : path.join(__dirname, '../../marketing/cogsworth'),
+    // SVGs are copied from src/main/streamdeck/assets/cogsworth/ → out/main/assets/cogsworth/
+    // by viteStaticCopy in electron.vite.config.ts. Same relative path in dev and packaged.
+    svgRoot: path.join(__dirname, 'assets/cogsworth'),
   })
 ```
 

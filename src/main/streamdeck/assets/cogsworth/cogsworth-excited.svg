@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <style>
+      .gear { fill: #e0e0e0; }
+      .face { fill: #0d0d0d; }
+    </style>
+  </defs>
+  <rect width="512" height="512" fill="#0d0d0d" rx="32"/>
+  <g transform="translate(256, 256)">
+    <path class="gear" d="M -30,-185 L 30,-185 L 35,-155 Q 65,-150 90,-135 L 110,-160 L 155,-110 L 135,-90 Q 150,-65 155,-35 L 185,-30 L 185,30 L 155,35 Q 150,65 135,90 L 155,110 L 110,155 L 90,135 Q 65,150 35,155 L 30,185 L -30,185 L -35,155 Q -65,150 -90,135 L -110,160 L -155,110 L -135,90 Q -150,65 -155,35 L -185,30 L -185,-30 L -155,-35 Q -150,-65 -135,-90 L -155,-110 L -110,-155 L -90,-135 Q -65,-150 -35,-155 Z"/>
+    <circle class="face" cx="0" cy="0" r="85"/>
+    <circle cx="0" cy="0" r="80" fill="none" stroke="#e0e0e0" stroke-width="6" opacity="0.3"/>
+    <!-- Eyes (extra large — excited) -->
+    <circle class="gear" cx="-28" cy="-18" r="16"/>
+    <circle class="gear" cx="28" cy="-18" r="16"/>
+    <!-- Mouth (wide open D smile) -->
+    <path d="M -25,18 Q -25,45 0,45 Q 25,45 25,18 Z" fill="#e0e0e0"/>
+  </g>
+</svg>
