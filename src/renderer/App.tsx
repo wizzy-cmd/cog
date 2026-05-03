@@ -80,6 +80,62 @@ export function App(): React.ReactElement {
     addWindow(agentId, `${config.name} (${config.cli})`, getStatusColor('idle'), activeTabId)
   }, [spawnAgent, addWindow, getStatusColor, activeTabId])
 
+  // Shared preset-apply: spawns each agent + restores window/panel positions.
+  // Used by both the PresetDialog Load button and the Stream Deck preset keys.
+  const applyPreset = useCallback((
+    configs: Omit<AgentConfig, 'id'>[],
+    savedWindows: WindowPosition[],
+    savedCanvas: CanvasState
+  ) => {
+    const posMap = new Map<string, WindowPosition>()
+    for (const wp of savedWindows) posMap.set(wp.agentName, wp)
+    if (savedCanvas) {
+      setZoom(savedCanvas.zoom)
+      setPan(savedCanvas.panX, savedCanvas.panY)
+    }
+    const panelTitleToId: Record<string, string> = {
+      'Pinboard': PINBOARD_ID,
+      'Info Channel': INFO_ID,
+      'Files': FILES_ID,
+      'R.A.C.': RAC_ID,
+      'Usage': USAGE_ID,
+    }
+    for (const wp of savedWindows) {
+      const panelBase = panelTitleToId[wp.agentName]
+      if (panelBase) {
+        const id = panelIdForTab(panelBase, activeTabId)
+        addWindowAt(id, wp.agentName, wp.x, wp.y, wp.width, wp.height, undefined, activeTabId)
+      }
+    }
+    configs.forEach(async (config) => {
+      const configWithTab = { ...config, tabId: activeTabId }
+      const agentId = await spawnAgent(configWithTab)
+      const title = `${config.name} (${config.cli})`
+      const pos = posMap.get(title)
+      if (pos) {
+        addWindowAt(agentId, title, pos.x, pos.y, pos.width, pos.height, getStatusColor('idle'), activeTabId)
+      } else {
+        addWindow(agentId, title, getStatusColor('idle'), activeTabId)
+      }
+    })
+  }, [setZoom, setPan, addWindowAt, addWindow, spawnAgent, getStatusColor, activeTabId])
+
+  // Stream Deck preset-key handler: fetch the preset JSON, then apply it.
+  useEffect(() => {
+    const off = window.electronAPI.onStreamDeckRunPreset(async (name) => {
+      try {
+        const preset = await window.electronAPI.loadPreset(name)
+        const configs = preset.agents.map(({ id: _id, ...rest }: AgentConfig) => rest)
+        const savedWindows: WindowPosition[] = preset.windows || []
+        const savedCanvas: CanvasState = preset.canvas || { zoom: 1, panX: 0, panY: 0 }
+        applyPreset(configs, savedWindows, savedCanvas)
+      } catch (err) {
+        console.warn('[streamdeck] preset load failed:', err)
+      }
+    })
+    return () => off()
+  }, [applyPreset])
+
   const handleCreateTab = useCallback(async () => {
     const tab = await window.electronAPI.createTab()
     setTabs(prev => [...prev, tab])
@@ -537,43 +593,7 @@ export function App(): React.ReactElement {
               pan={pan}
               onLoadPreset={(configs, savedWindows, savedCanvas) => {
                 setShowPresetDialog(false)
-                // Build a lookup of saved positions by window title
-                const posMap = new Map<string, WindowPosition>()
-                for (const wp of savedWindows) {
-                  posMap.set(wp.agentName, wp)
-                }
-                // Restore canvas state
-                if (savedCanvas) {
-                  setZoom(savedCanvas.zoom)
-                  setPan(savedCanvas.panX, savedCanvas.panY)
-                }
-                // Restore panel windows from saved positions (tab-scoped)
-                const panelTitleToId: Record<string, string> = {
-                  'Pinboard': PINBOARD_ID,
-                  'Info Channel': INFO_ID,
-                  'Files': FILES_ID,
-                  'R.A.C.': RAC_ID,
-                  'Usage': USAGE_ID,
-                }
-                for (const wp of savedWindows) {
-                  const panelBase = panelTitleToId[wp.agentName]
-                  if (panelBase) {
-                    const id = panelIdForTab(panelBase, activeTabId)
-                    addWindowAt(id, wp.agentName, wp.x, wp.y, wp.width, wp.height, undefined, activeTabId)
-                  }
-                }
-                // Spawn agents with saved positions, scoped to current tab
-                configs.forEach(async (config) => {
-                  const configWithTab = { ...config, tabId: activeTabId }
-                  const agentId = await spawnAgent(configWithTab)
-                  const title = `${config.name} (${config.cli})`
-                  const pos = posMap.get(title)
-                  if (pos) {
-                    addWindowAt(agentId, title, pos.x, pos.y, pos.width, pos.height, getStatusColor('idle'), activeTabId)
-                  } else {
-                    addWindow(agentId, title, getStatusColor('idle'), activeTabId)
-                  }
-                })
+                applyPreset(configs, savedWindows, savedCanvas)
               }}
               onClose={() => setShowPresetDialog(false)}
             />

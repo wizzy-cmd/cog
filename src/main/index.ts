@@ -2711,8 +2711,10 @@ async function main(): Promise<void> {
       },
       markTrollboxRead: () => mainWindow?.webContents.send('streamdeck:mark-read', 'trollbox'),
       loadPreset: async (name: string) => {
-        const preset = loadPreset(name)
-        mainWindow?.webContents.send(IPC.LOAD_PRESET, preset)
+        // Tell the renderer to load + apply the preset using its existing flow
+        // (which spawns each agent and restores window positions). Sending just
+        // the name keeps the heavy lifting on the renderer side.
+        mainWindow?.webContents.send('streamdeck:run-preset', name)
       },
       writeToOrchestratorPty: (text: string) => {
         const orch = Array.from(agents.values()).find(m => m.config.role === 'orchestrator')

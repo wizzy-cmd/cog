@@ -127,6 +127,7 @@ declare global {
       onStreamDeckFocusAgent(cb: (name: string) => void): () => void
       onStreamDeckMarkRead(cb: (kind: string) => void): () => void
       onStreamDeckToast(cb: (msg: string) => void): () => void
+      onStreamDeckRunPreset(cb: (name: string) => void): () => void
     }
   }
 }

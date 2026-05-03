@@ -281,4 +281,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('streamdeck:toast', handler)
     return () => ipcRenderer.removeListener('streamdeck:toast', handler)
   },
+  onStreamDeckRunPreset: (cb: (name: string) => void) => {
+    const handler = (_e: unknown, name: string) => cb(name)
+    ipcRenderer.on('streamdeck:run-preset', handler)
+    return () => ipcRenderer.removeListener('streamdeck:run-preset', handler)
+  },
 })
