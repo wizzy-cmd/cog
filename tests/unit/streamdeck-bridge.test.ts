@@ -28,6 +28,13 @@ describe('StreamDeckBridge', () => {
       listPresets: async () => [],
       getUnread: () => ({ inbox: 0, trollbox: 0, stale: 0 }),
       svgRoot: 'src/main/streamdeck/assets/cogsworth',
+      actions: {
+        onAgentTap: vi.fn(),
+        onAgentHold: vi.fn(),
+        onActionTap: vi.fn(),
+        onActionHold: vi.fn(),
+        onPresetTap: vi.fn(),
+      },
     })
     await bridge.start()
     expect(deck.setKeyImage).toHaveBeenCalledTimes(15)
@@ -40,6 +47,13 @@ describe('StreamDeckBridge', () => {
       listPresets: async () => [],
       getUnread: () => ({ inbox: 0, trollbox: 0, stale: 0 }),
       svgRoot: 'src/main/streamdeck/assets/cogsworth',
+      actions: {
+        onAgentTap: vi.fn(),
+        onAgentHold: vi.fn(),
+        onActionTap: vi.fn(),
+        onActionHold: vi.fn(),
+        onPresetTap: vi.fn(),
+      },
     })
     await bridge.start()
     // Slot 0 should still be rendered (orchestrator-missing variant)
@@ -54,6 +68,13 @@ describe('StreamDeckBridge', () => {
       listPresets: async () => [],
       getUnread: () => ({ inbox: 0, trollbox: 0, stale: 0 }),
       svgRoot: 'src/main/streamdeck/assets/cogsworth',
+      actions: {
+        onAgentTap: vi.fn(),
+        onAgentHold: vi.fn(),
+        onActionTap: vi.fn(),
+        onActionHold: vi.fn(),
+        onPresetTap: vi.fn(),
+      },
     })
     await bridge.start()
     deck.setKeyImage.mockClear()
@@ -77,6 +98,13 @@ describe('StreamDeckBridge', () => {
       listPresets: async () => [],
       getUnread: () => ({ inbox: 0, trollbox: 0, stale: 0 }),
       svgRoot: 'src/main/streamdeck/assets/cogsworth',
+      actions: {
+        onAgentTap: vi.fn(),
+        onAgentHold: vi.fn(),
+        onActionTap: vi.fn(),
+        onActionHold: vi.fn(),
+        onPresetTap: vi.fn(),
+      },
     })
     await bridge.start()
     deck.setKeyImage.mockClear()
@@ -86,5 +114,45 @@ describe('StreamDeckBridge', () => {
     expect(indices.has(0)).toBe(true)
     // Did NOT re-render the action / preset rows (slots 5-14)
     expect([...indices].every(i => i < 5)).toBe(true)
+  })
+
+  it('dispatches agent tap on short press, hold on long press', async () => {
+    const onAgentTap = vi.fn()
+    const onAgentHold = vi.fn()
+
+    registry.register({
+      id: 'x', name: 'wrk-1', cli: 'claude', cwd: '/tmp', role: 'worker',
+      ceoNotes: '', shell: 'powershell' as const, admin: false, autoMode: false,
+    })
+
+    const bridge = new StreamDeckBridge({
+      deck,
+      registry,
+      listPresets: async () => [],
+      getUnread: () => ({ inbox: 0, trollbox: 0, stale: 0 }),
+      svgRoot: 'src/main/streamdeck/assets/cogsworth',
+      actions: {
+        onAgentTap, onAgentHold,
+        onActionTap: vi.fn(), onActionHold: vi.fn(), onPresetTap: vi.fn(),
+      },
+    })
+    await bridge.start()
+
+    const onCalls = deck.on.mock.calls
+    const downCb = onCalls.find(c => c[0] === 'down')?.[1]
+    const upCb   = onCalls.find(c => c[0] === 'up')?.[1]
+
+    // With no orchestrator, slot 0 is empty and the worker fills slot 1.
+    downCb!(1)
+    upCb!(1)
+    expect(onAgentTap).toHaveBeenCalledWith('wrk-1')
+    expect(onAgentHold).not.toHaveBeenCalled()
+
+    onAgentTap.mockClear()
+    downCb!(1)
+    await new Promise(r => setTimeout(r, 1600))
+    upCb!(1)
+    expect(onAgentHold).toHaveBeenCalledWith('wrk-1')
+    expect(onAgentTap).not.toHaveBeenCalled()
   })
 })

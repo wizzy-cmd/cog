@@ -15,12 +15,21 @@ export interface StreamDeckHandle {
   off(event: string, listener: (...args: unknown[]) => void): void
 }
 
+export interface BridgeActions {
+  onAgentTap(agentName: string): void
+  onAgentHold(agentName: string): void
+  onActionTap(action: 'voice' | 'inbox' | 'trollbox' | 'stale' | 'panic'): void
+  onActionHold(action: 'voice' | 'inbox' | 'trollbox' | 'stale' | 'panic'): void
+  onPresetTap(presetName: string): void
+}
+
 export interface BridgeOpts {
   deck: StreamDeckHandle
   registry: AgentRegistry
   listPresets: () => Promise<{ name: string; agentCount: number }[]>
   getUnread: () => { inbox: number; trollbox: number; stale: number }
   svgRoot: string
+  actions: BridgeActions
 }
 
 export class StreamDeckBridge {
@@ -30,6 +39,53 @@ export class StreamDeckBridge {
   private started = false
   private lastRendered: Map<number, string> = new Map()  // index → JSON descriptor
   private debounceTimer: NodeJS.Timeout | null = null
+  private pressedAt: Map<number, number> = new Map()
+  private holdMs = 1500
+  private holdMsPanic = 2000
+
+  private handleKeyDown = (index: unknown) => {
+    if (typeof index !== 'number') return
+    this.pressedAt.set(index, Date.now())
+  }
+
+  private handleKeyUp = (index: unknown) => {
+    if (typeof index !== 'number') return
+    const downAt = this.pressedAt.get(index)
+    this.pressedAt.delete(index)
+    if (downAt === undefined) return
+    const heldFor = Date.now() - downAt
+    const desc = this.lastDescriptorFor(index)
+    if (!desc) return
+
+    const threshold = (desc.kind === 'action' && desc.action === 'panic') ? this.holdMsPanic : this.holdMs
+    const isHold = heldFor >= threshold
+
+    if (desc.kind === 'agent' && desc.agent) {
+      isHold ? this.opts.actions.onAgentHold(desc.agent.name)
+             : this.opts.actions.onAgentTap(desc.agent.name)
+    } else if (desc.kind === 'action' && desc.action) {
+      isHold ? this.opts.actions.onActionHold(desc.action)
+             : this.opts.actions.onActionTap(desc.action)
+    } else if (desc.kind === 'preset' && desc.preset) {
+      this.opts.actions.onPresetTap(desc.preset.name)
+    }
+  }
+
+  private lastDescriptorFor(index: number): KeyDescriptor | null {
+    const sig = this.lastRendered.get(index)
+    if (!sig) return null
+    try {
+      const o = JSON.parse(sig) as { k: string; n?: string; s?: string; a?: string; p?: string; e?: string }
+      return {
+        index,
+        kind: o.k as KeyDescriptor['kind'],
+        agent: o.n ? this.opts.registry.list().find(a => a.name === o.n) : undefined,
+        action: o.a as KeyDescriptor['action'] | undefined,
+        preset: o.p ? { name: o.p, agentCount: 0 } : undefined,
+        empty: o.e as KeyDescriptor['empty'] | undefined,
+      }
+    } catch { return null }
+  }
 
   private onStatus = (e: { name: string; status: string }) => {
     const a = this.opts.registry.get(e.name)
@@ -56,6 +112,8 @@ export class StreamDeckBridge {
     this.opts.registry.on('register', this.onChange)
     this.opts.registry.on('status', this.onStatus)
     this.opts.registry.on('remove', this.onChange)
+    this.opts.deck.on('down', this.handleKeyDown as (...args: unknown[]) => void)
+    this.opts.deck.on('up', this.handleKeyUp as (...args: unknown[]) => void)
     await this.renderAll(true)
   }
 
@@ -64,6 +122,8 @@ export class StreamDeckBridge {
     this.opts.registry.off('register', this.onChange)
     this.opts.registry.off('status', this.onStatus)
     this.opts.registry.off('remove', this.onChange)
+    this.opts.deck.off('down', this.handleKeyDown as (...args: unknown[]) => void)
+    this.opts.deck.off('up', this.handleKeyUp as (...args: unknown[]) => void)
     if (this.debounceTimer) { clearTimeout(this.debounceTimer); this.debounceTimer = null }
     try { await this.opts.deck.clearAllKeys() } catch { /* device gone */ }
     try { await this.opts.deck.close() } catch { /* idem */ }

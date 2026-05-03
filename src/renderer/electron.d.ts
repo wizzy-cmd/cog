@@ -119,6 +119,11 @@ declare global {
       onVoiceStart(cb: () => void): () => void
       onVoiceStop(cb: () => void): () => void
       sendVoiceAudio(audio: ArrayBuffer): void
+      // Stream Deck → renderer panel hooks
+      onStreamDeckOpenPanel(cb: (panel: string) => void): () => void
+      onStreamDeckFocusAgent(cb: (name: string) => void): () => void
+      onStreamDeckMarkRead(cb: (kind: string) => void): () => void
+      onStreamDeckToast(cb: (msg: string) => void): () => void
     }
   }
 }

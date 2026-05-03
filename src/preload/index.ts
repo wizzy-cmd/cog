@@ -257,4 +257,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener(IPC.VOICE_STOP, handler)
   },
   sendVoiceAudio: (audio: ArrayBuffer) => ipcRenderer.send(IPC.VOICE_AUDIO, audio),
+  // Stream Deck → renderer panel hooks
+  onStreamDeckOpenPanel: (cb: (panel: string) => void) => {
+    const handler = (_e: unknown, panel: string) => cb(panel)
+    ipcRenderer.on('streamdeck:open-panel', handler)
+    return () => ipcRenderer.removeListener('streamdeck:open-panel', handler)
+  },
+  onStreamDeckFocusAgent: (cb: (name: string) => void) => {
+    const handler = (_e: unknown, name: string) => cb(name)
+    ipcRenderer.on('streamdeck:focus-agent', handler)
+    return () => ipcRenderer.removeListener('streamdeck:focus-agent', handler)
+  },
+  onStreamDeckMarkRead: (cb: (kind: string) => void) => {
+    const handler = (_e: unknown, kind: string) => cb(kind)
+    ipcRenderer.on('streamdeck:mark-read', handler)
+    return () => ipcRenderer.removeListener('streamdeck:mark-read', handler)
+  },
+  onStreamDeckToast: (cb: (msg: string) => void) => {
+    const handler = (_e: unknown, msg: string) => cb(msg)
+    ipcRenderer.on('streamdeck:toast', handler)
+    return () => ipcRenderer.removeListener('streamdeck:toast', handler)
+  },
 })
