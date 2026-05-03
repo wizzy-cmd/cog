@@ -8,6 +8,28 @@ import { buildBridgeActions, type ActionDeps } from './handlers'
 import { IPC } from '../../shared/types'
 import type { AgentRegistry } from '../hub/agent-registry'
 import type { StreamDeckButtonControlDefinition, StreamDeckEncoderControlDefinition } from '@elgato-stream-deck/node'
+import fs from 'node:fs'
+import path from 'node:path'
+
+// Mirrors the pattern in src/main/remote/remote-server.ts: vite's static-copy
+// plugin doesn't always populate the bundled main dir reliably, so we fall
+// back to the source path. Returns the first candidate that contains
+// cogsworth-happy.svg (a sentinel file).
+export function resolveCogsworthDir(): string {
+  const candidates = [
+    path.join(__dirname, 'assets', 'cogsworth'),
+    path.resolve(__dirname, '..', '..', 'src', 'main', 'streamdeck', 'assets', 'cogsworth'),
+    path.resolve(process.cwd(), 'src', 'main', 'streamdeck', 'assets', 'cogsworth'),
+  ]
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'cogsworth-happy.svg'))) {
+      console.log(`[streamdeck] svgRoot resolved: ${dir}`)
+      return dir
+    }
+  }
+  console.warn('[streamdeck] svgRoot not found; tried:', candidates.join(' | '))
+  return candidates[0] // best-guess fallback; renderer will throw at first read
+}
 
 let bridge: StreamDeckBridge | null = null
 let coord: VoiceCoordinator | null = null

@@ -37,7 +37,7 @@ import { migrateLegacyUserData } from './migration/userdata-migration'
 import type { AgentConfig, AgentTheme, RemoteSetupProgress, CommunityAgent, CommunityCategory, RespawnResult, NotificationThreshold, ProposedAgent, TeamProposal } from '../shared/types'
 import { IPC } from '../shared/types'
 import { validateRespawnRequest } from './respawn-validation'
-import { initStreamDeck, disposeStreamDeck } from './streamdeck'
+import { initStreamDeck, disposeStreamDeck, resolveCogsworthDir } from './streamdeck'
 
 let hub: HubServer
 let mainWindow: BrowserWindow
@@ -2724,9 +2724,7 @@ async function main(): Promise<void> {
       showMainWindow: () => { mainWindow?.show(); mainWindow?.focus() },
     },
     mainWindow: () => mainWindow ?? null,
-    svgRoot: app.isPackaged
-      ? path.join(process.resourcesPath, 'streamdeck', 'assets', 'cogsworth')
-      : path.join(__dirname, '../main/streamdeck/assets/cogsworth'),
+    svgRoot: resolveCogsworthDir(),
   }).catch(err => console.warn('[streamdeck] init error:', (err as Error).message))
 }
 
