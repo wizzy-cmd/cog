@@ -28,6 +28,22 @@ export class StreamDeckBridge {
   private renderer: KeyRenderer
   private lastActivity: Record<string, number> = {}
   private started = false
+  private lastRendered: Map<number, string> = new Map()  // index → JSON descriptor
+  private debounceTimer: NodeJS.Timeout | null = null
+
+  private onStatus = (e: { name: string; status: string }) => {
+    const a = this.opts.registry.get(e.name)
+    if (a && (a.role || '').trim().toLowerCase() !== 'orchestrator') {
+      this.lastActivity[e.name] = Date.now()
+    }
+    this.scheduleRerender()
+  }
+  private onChange = () => this.scheduleRerender()
+
+  private scheduleRerender(): void {
+    if (this.debounceTimer) clearTimeout(this.debounceTimer)
+    this.debounceTimer = setTimeout(() => { void this.renderAll(false) }, 150)
+  }
 
   constructor(opts: BridgeOpts) {
     this.opts = opts
@@ -37,23 +53,35 @@ export class StreamDeckBridge {
   async start(): Promise<void> {
     if (this.started) return
     this.started = true
-    await this.renderAll()
+    this.opts.registry.on('register', this.onChange)
+    this.opts.registry.on('status', this.onStatus)
+    this.opts.registry.on('remove', this.onChange)
+    await this.renderAll(true)
   }
 
   async dispose(): Promise<void> {
     this.started = false
-    try { await this.opts.deck.clearAllKeys() } catch { /* device may be gone */ }
+    this.opts.registry.off('register', this.onChange)
+    this.opts.registry.off('status', this.onStatus)
+    this.opts.registry.off('remove', this.onChange)
+    if (this.debounceTimer) { clearTimeout(this.debounceTimer); this.debounceTimer = null }
+    try { await this.opts.deck.clearAllKeys() } catch { /* device gone */ }
     try { await this.opts.deck.close() } catch { /* idem */ }
   }
 
-  private async renderAll(): Promise<void> {
+  private async renderAll(force: boolean): Promise<void> {
     const layout = computeLayout({
       agents: this.opts.registry.list(),
       presets: await this.opts.listPresets(),
       lastActivity: this.lastActivity,
       unread: this.opts.getUnread(),
     })
-    await Promise.all(layout.map(k => this.renderKey(k)))
+    await Promise.all(layout.map(async (k) => {
+      const sig = JSON.stringify({ k: k.kind, n: k.agent?.name, s: k.agent?.status, a: k.action, p: k.preset?.name, e: k.empty })
+      if (!force && this.lastRendered.get(k.index) === sig) return
+      this.lastRendered.set(k.index, sig)
+      await this.renderKey(k)
+    }))
   }
 
   private async renderKey(key: KeyDescriptor): Promise<void> {
