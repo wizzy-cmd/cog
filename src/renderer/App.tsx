@@ -420,6 +420,32 @@ export function App(): React.ReactElement {
     }
   }, [editingAgentId, agents])
 
+  // Stream Deck → renderer panel hooks
+  // TODO: wire onStreamDeckOpenPanel into panel toggles (toggleInbox, toggleTrollbox, etc.)
+  // TODO: wire onStreamDeckFocusAgent into agent focus state
+  // TODO: wire onStreamDeckMarkRead into inbox/trollbox mark-read
+  // TODO: wire onStreamDeckToast into toast notification system
+  useEffect(() => {
+    const unsubPanel = window.electronAPI.onStreamDeckOpenPanel((_panel) => {
+      // Stub: panels are exposed but not yet wired into panel-switching state
+    })
+    const unsubFocus = window.electronAPI.onStreamDeckFocusAgent((_name) => {
+      // Stub: agent focus not yet wired
+    })
+    const unsubRead = window.electronAPI.onStreamDeckMarkRead((_kind) => {
+      // Stub: mark-read not yet wired
+    })
+    const unsubToast = window.electronAPI.onStreamDeckToast((_msg) => {
+      // Stub: toast not yet wired
+    })
+    return () => {
+      unsubPanel()
+      unsubFocus()
+      unsubRead()
+      unsubToast()
+    }
+  }, [])
+
   const handleProjectOpened = useCallback((p: RecentProject) => {
     setProject(p)
     setShowProjectPicker(false)

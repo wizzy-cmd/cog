@@ -37,6 +37,7 @@ import { migrateLegacyUserData } from './migration/userdata-migration'
 import type { AgentConfig, AgentTheme, RemoteSetupProgress, CommunityAgent, CommunityCategory, RespawnResult, NotificationThreshold, ProposedAgent, TeamProposal } from '../shared/types'
 import { IPC } from '../shared/types'
 import { validateRespawnRequest } from './respawn-validation'
+import { initStreamDeck, disposeStreamDeck, resolveCogsworthDir, getStreamDeckStatus, reconnectStreamDeck } from './streamdeck'
 
 let hub: HubServer
 let mainWindow: BrowserWindow
@@ -2637,6 +2638,98 @@ async function main(): Promise<void> {
     // No project history — renderer will show project picker
     mainWindow.webContents.send(IPC.PROJECT_CHANGED, null)
   }
+
+  // Stream Deck integration — device claim + hotplug
+  const streamDeckInitOpts = {
+    registry: hub.registry,
+    listPresets: async () => {
+      try {
+        const names = listPresets()
+        return names.map(name => {
+          const p = loadPreset(name)
+          return { name: p.name, agentCount: p.agents.length }
+        })
+      } catch { return [] }
+    },
+    getUnread: () => ({
+      inbox: hub?.inboxChannel.unreadCount() ?? 0,
+      trollbox: 0,  // Trollbox unread not tracked in main process
+      stale: 0,     // Stale count not available in main process
+    }),
+    settingsIO: {
+      load: () => loadSettings(),
+      save: (next: Record<string, unknown>) => {
+        for (const [k, v] of Object.entries(next)) saveSetting(k, v)
+      },
+    },
+    actionDeps: {
+      killAgentByName: async (name: string) => {
+        const managed = Array.from(agents.values()).find(m => m.config.name === name)
+        if (managed) {
+          manualKills.add(managed.config.id)
+          killPty(managed)
+          hub.registry.remove(name)
+          hub.messages.clearAgent(name)
+          pendingNudges.delete(name)
+          lastNudgeDelivery.delete(name)
+          const t = nudgeFallbackTimers.get(name)
+          if (t) { clearTimeout(t); nudgeFallbackTimers.delete(name) }
+          if (managed.mcpConfigPath) cleanupConfig(managed.mcpConfigPath)
+          initialPrompts.delete(managed.config.id)
+          hasReceivedInitialPrompt.delete(managed.config.id)
+          agents.delete(managed.config.id)
+          mainWindow?.webContents.send(IPC.AGENT_STATE_UPDATE, getVisibleAgents())
+        }
+      },
+      focusAgent: (name: string) => {
+        mainWindow?.show()
+        mainWindow?.focus()
+        mainWindow?.webContents.send('streamdeck:focus-agent', name)
+      },
+      killAllAgents: async () => {
+        const ids = [...agents.keys()]
+        for (const id of ids) {
+          const managed = agents.get(id)
+          if (managed) {
+            manualKills.add(id)
+            killPty(managed)
+            hub.registry.remove(managed.config.name)
+            hub.messages.clearAgent(managed.config.name)
+            pendingNudges.delete(managed.config.name)
+            if (managed.mcpConfigPath) cleanupConfig(managed.mcpConfigPath)
+          }
+          agents.delete(id)
+        }
+        mainWindow?.webContents.send(IPC.AGENT_STATE_UPDATE, getVisibleAgents())
+      },
+      openInbox: () => mainWindow?.webContents.send('streamdeck:open-panel', 'inbox'),
+      openTrollbox: () => mainWindow?.webContents.send('streamdeck:open-panel', 'trollbox'),
+      openStalePanel: () => mainWindow?.webContents.send('streamdeck:open-panel', 'stale'),
+      markInboxRead: () => {
+        hub?.inboxChannel.markAllRead()
+        mainWindow?.webContents.send('streamdeck:mark-read', 'inbox')
+      },
+      markTrollboxRead: () => mainWindow?.webContents.send('streamdeck:mark-read', 'trollbox'),
+      loadPreset: async (name: string) => {
+        const preset = loadPreset(name)
+        mainWindow?.webContents.send(IPC.LOAD_PRESET, preset)
+      },
+      writeToOrchestratorPty: (text: string) => {
+        const orch = Array.from(agents.values()).find(m => m.config.role === 'orchestrator')
+        if (!orch) return false
+        writeToPty(orch, text)
+        return true
+      },
+      notifyToast: (msg: string) => mainWindow?.webContents.send('streamdeck:toast', msg),
+      showMainWindow: () => { mainWindow?.show(); mainWindow?.focus() },
+    },
+    mainWindow: () => mainWindow ?? null,
+    svgRoot: resolveCogsworthDir(),
+  }
+  await initStreamDeck(streamDeckInitOpts).catch(err => console.warn('[streamdeck] init error:', (err as Error).message))
+
+  ipcMain.handle(IPC.STREAMDECK_STATUS, () => getStreamDeckStatus())
+  ipcMain.handle(IPC.STREAMDECK_RECONNECT, () => reconnectStreamDeck(streamDeckInitOpts))
 }
 
 main()
@@ -2647,6 +2740,7 @@ app.on('window-all-closed', async () => {
 })
 
 app.on('before-quit', async (event) => {
+  await disposeStreamDeck()
   if (remoteServer || cloudflaredManager) {
     event.preventDefault()
     await disableRemoteView()

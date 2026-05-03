@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <style>
+      .gear { fill: #e0e0e0; }
+      .face { fill: #0d0d0d; }
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      @keyframes blink {
+        0%, 90%, 100% { ry: 12; }
+        95% { ry: 2; }
+      }
+      .gear-body { animation: spin 8s linear infinite; transform-origin: 0px 0px; }
+      .eye { animation: blink 4s ease-in-out infinite; }
+      .eye-r { animation: blink 4s ease-in-out infinite; animation-delay: 0.1s; }
+    </style>
+  </defs>
+  <rect width="512" height="512" fill="#0d0d0d" rx="32"/>
+  <g transform="translate(256, 256)">
+    <!-- Gear body (spins) -->
+    <g class="gear-body">
+      <path class="gear" d="M -30,-185 L 30,-185 L 35,-155 Q 65,-150 90,-135 L 110,-160 L 155,-110 L 135,-90 Q 150,-65 155,-35 L 185,-30 L 185,30 L 155,35 Q 150,65 135,90 L 155,110 L 110,155 L 90,135 Q 65,150 35,155 L 30,185 L -30,185 L -35,155 Q -65,150 -90,135 L -110,160 L -155,110 L -135,90 Q -150,65 -155,35 L -185,30 L -185,-30 L -155,-35 Q -150,-65 -135,-90 L -155,-110 L -110,-155 L -90,-135 Q -65,-150 -35,-155 Z"/>
+    </g>
+    <!-- Face stays still while gear spins behind it -->
+    <circle class="face" cx="0" cy="0" r="85"/>
+    <circle cx="0" cy="0" r="80" fill="none" stroke="#e0e0e0" stroke-width="6" opacity="0.3"/>
+    <!-- Eyes (blink occasionally) -->
+    <ellipse class="eye" cx="-28" cy="-15" rx="12" ry="12" fill="#e0e0e0"/>
+    <ellipse class="eye-r" cx="28" cy="-15" rx="12" ry="12" fill="#e0e0e0"/>
+    <!-- Mouth -->
+    <line x1="-20" y1="28" x2="20" y2="28" stroke="#e0e0e0" stroke-width="5" stroke-linecap="round"/>
+  </g>
+</svg>

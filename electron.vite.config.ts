@@ -11,6 +11,10 @@ export default defineConfig({
           {
             src: 'src/main/remote/static/*',
             dest: 'static'
+          },
+          {
+            src: 'src/main/streamdeck/assets/cogsworth/*',
+            dest: 'assets/cogsworth'
           }
         ]
       })

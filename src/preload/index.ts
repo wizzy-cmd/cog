@@ -155,6 +155,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Settings
   getSettings: () => ipcRenderer.invoke(IPC.SETTINGS_GET),
   setSetting: (key: string, value: unknown) => ipcRenderer.invoke(IPC.SETTINGS_SET, key, value),
+  // Stream Deck status + reconnect
+  getStreamDeckStatus: () => ipcRenderer.invoke(IPC.STREAMDECK_STATUS),
+  reconnectStreamDeck: () => ipcRenderer.invoke(IPC.STREAMDECK_RECONNECT),
   // Tabs
   getTabs: () => ipcRenderer.invoke(IPC.TAB_GET_ALL),
   createTab: (name?: string) => ipcRenderer.invoke(IPC.TAB_CREATE, name),
@@ -245,4 +248,37 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitBranches: () => ipcRenderer.invoke(IPC.GIT_BRANCHES),
   gitCheckout: (branch: string) => ipcRenderer.invoke(IPC.GIT_CHECKOUT, branch),
   gitNewBranch: (name: string) => ipcRenderer.invoke(IPC.GIT_NEW_BRANCH, name),
+  // Voice recorder — Stream Deck integration
+  onVoiceStart: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on(IPC.VOICE_START, handler)
+    return () => ipcRenderer.removeListener(IPC.VOICE_START, handler)
+  },
+  onVoiceStop: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on(IPC.VOICE_STOP, handler)
+    return () => ipcRenderer.removeListener(IPC.VOICE_STOP, handler)
+  },
+  sendVoiceAudio: (audio: ArrayBuffer) => ipcRenderer.send(IPC.VOICE_AUDIO, audio),
+  // Stream Deck → renderer panel hooks
+  onStreamDeckOpenPanel: (cb: (panel: string) => void) => {
+    const handler = (_e: unknown, panel: string) => cb(panel)
+    ipcRenderer.on('streamdeck:open-panel', handler)
+    return () => ipcRenderer.removeListener('streamdeck:open-panel', handler)
+  },
+  onStreamDeckFocusAgent: (cb: (name: string) => void) => {
+    const handler = (_e: unknown, name: string) => cb(name)
+    ipcRenderer.on('streamdeck:focus-agent', handler)
+    return () => ipcRenderer.removeListener('streamdeck:focus-agent', handler)
+  },
+  onStreamDeckMarkRead: (cb: (kind: string) => void) => {
+    const handler = (_e: unknown, kind: string) => cb(kind)
+    ipcRenderer.on('streamdeck:mark-read', handler)
+    return () => ipcRenderer.removeListener('streamdeck:mark-read', handler)
+  },
+  onStreamDeckToast: (cb: (msg: string) => void) => {
+    const handler = (_e: unknown, msg: string) => cb(msg)
+    ipcRenderer.on('streamdeck:toast', handler)
+    return () => ipcRenderer.removeListener('streamdeck:toast', handler)
+  },
 })

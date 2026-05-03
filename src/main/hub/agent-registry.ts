@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events'
 import type { AgentConfig, AgentState, AgentStatus } from '../../shared/types'
 
 // Fields copied from an incoming AgentConfig onto the live AgentState.
@@ -19,9 +20,13 @@ function copyConfigFields(src: AgentConfig, dst: AgentState): void {
   }
 }
 
-export class AgentRegistry {
+export class AgentRegistry extends EventEmitter {
   private agents = new Map<string, AgentState>()
   private lastHeartbeat = new Map<string, number>() // name → timestamp ms
+
+  constructor() {
+    super()
+  }
 
   register(config: AgentConfig): AgentState {
     const existing = this.agents.get(config.name)
@@ -31,6 +36,7 @@ export class AgentRegistry {
       // and clobber server-managed runtime state.
       copyConfigFields(config, existing)
       existing.status = 'idle'
+      this.emit('status', { name: existing.name, status: existing.status })
       return existing
     }
     const state: AgentState = {
@@ -39,6 +45,7 @@ export class AgentRegistry {
     } as AgentState
     copyConfigFields(config, state)
     this.agents.set(config.name, state)
+    this.emit('register', state)
     return state
   }
 
@@ -52,14 +59,17 @@ export class AgentRegistry {
 
   updateStatus(name: string, status: AgentStatus): void {
     const agent = this.agents.get(name)
-    if (agent) {
+    if (agent && agent.status !== status) {
       agent.status = status
+      this.emit('status', { name, status })
     }
   }
 
   remove(name: string): void {
+    if (!this.agents.has(name)) return
     this.agents.delete(name)
     this.lastHeartbeat.delete(name)
+    this.emit('remove', name)
   }
 
   recordHeartbeat(name: string): void {

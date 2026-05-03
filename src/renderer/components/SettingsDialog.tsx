@@ -1007,10 +1007,128 @@ export function SettingsDialog({ onClose, agents = [] }: SettingsDialogProps): R
           )}
         </div>
 
+        {/* Stream Deck section */}
+        <StreamDeckSection />
+
         <button onClick={onClose} style={{
           padding: '8px 16px', backgroundColor: '#2a2a2a', border: '1px solid #444',
           borderRadius: '4px', color: '#aaa', cursor: 'pointer', fontSize: '13px', alignSelf: 'flex-end'
         }}>Done</button>
+      </div>
+    </div>
+  )
+}
+
+function StreamDeckSection(): React.ReactElement {
+  const [sdSettings, setSdSettings] = React.useState<{ enabled: boolean; whisperBackend: 'cloud' | 'local' | 'disabled'; openaiApiKey?: string }>({ enabled: true, whisperBackend: 'cloud' })
+  const [showKey, setShowKey] = React.useState(false)
+  const [connection, setConnection] = React.useState<'connected' | 'disconnected' | 'unknown'>('unknown')
+
+  React.useEffect(() => {
+    void electronAPI.getSettings().then((all: Record<string, unknown>) => {
+      const s = all.streamdeck as typeof sdSettings | undefined
+      if (s) setSdSettings(prev => ({ ...prev, ...s }))
+    })
+    void window.electronAPI.getStreamDeckStatus?.().then((s: 'connected' | 'disconnected') => setConnection(s))
+  }, [])
+
+  const update = async (patch: Partial<typeof sdSettings>) => {
+    const next = { ...sdSettings, ...patch }
+    setSdSettings(next)
+    await electronAPI.setSetting('streamdeck', next)
+  }
+
+  const rowStyle: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '8px', backgroundColor: '#252525', borderRadius: '4px', gap: '8px'
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', borderTop: '1px solid #333', paddingTop: '16px' }}>
+      <div style={{ fontSize: '12px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        Stream Deck
+      </div>
+
+      <div style={rowStyle}>
+        <div>
+          <div style={{ fontSize: '13px', color: '#e0e0e0' }}>Enable Stream Deck integration</div>
+          <div style={{ fontSize: '11px', color: '#666' }}>Connect a Stream Deck MK.2 for hardware controls</div>
+        </div>
+        <div
+          onClick={() => void update({ enabled: !sdSettings.enabled })}
+          style={{
+            width: 40, height: 22, borderRadius: 11,
+            backgroundColor: sdSettings.enabled ? '#4caf50' : '#444',
+            position: 'relative', cursor: 'pointer', transition: 'background-color 0.2s',
+            flexShrink: 0, marginLeft: 12
+          }}
+        >
+          <div style={{
+            width: 18, height: 18, borderRadius: '50%',
+            backgroundColor: '#fff', position: 'absolute', top: 2,
+            left: sdSettings.enabled ? 20 : 2,
+            transition: 'left 0.2s'
+          }} />
+        </div>
+      </div>
+
+      <div style={{ ...rowStyle, flexDirection: 'column', alignItems: 'flex-start' }}>
+        <div style={{ fontSize: '13px', color: '#e0e0e0' }}>Voice transcription</div>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          {(['cloud', 'local', 'disabled'] as const).map(opt => (
+            <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#ccc', cursor: 'pointer' }}>
+              <input type="radio" name="sd-whisper" value={opt}
+                     checked={sdSettings.whisperBackend === opt}
+                     onChange={() => void update({ whisperBackend: opt })} />
+              {opt === 'cloud' ? 'Cloud (OpenAI Whisper)'
+                : opt === 'local' ? 'Local (Whisper.cpp)'
+                : 'Disabled'}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {sdSettings.whisperBackend === 'cloud' && (
+        <div style={rowStyle}>
+          <div style={{ fontSize: '13px', color: '#e0e0e0', flexShrink: 0 }}>OpenAI API key</div>
+          <div style={{ display: 'flex', gap: '6px', flex: 1, minWidth: 0 }}>
+            <input
+              type={showKey ? 'text' : 'password'}
+              value={sdSettings.openaiApiKey ?? ''}
+              onChange={e => void update({ openaiApiKey: e.target.value })}
+              placeholder="sk-…"
+              style={{
+                flex: 1, minWidth: 0, padding: '4px 8px', backgroundColor: '#1a1a1a',
+                color: '#e0e0e0', border: '1px solid #444', borderRadius: '4px', fontSize: '12px'
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowKey(v => !v)}
+              style={{
+                padding: '4px 10px', backgroundColor: '#333', color: '#e0e0e0',
+                border: '1px solid #444', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', flexShrink: 0
+              }}
+            >{showKey ? 'Hide' : 'Show'}</button>
+          </div>
+        </div>
+      )}
+
+      <div style={rowStyle}>
+        <div>
+          <div style={{ fontSize: '13px', color: '#e0e0e0' }}>Connection</div>
+          <div style={{ fontSize: '11px', color: connection === 'connected' ? '#4caf50' : connection === 'disconnected' ? '#ef4444' : '#888' }}>
+            {connection}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => window.electronAPI.reconnectStreamDeck?.()}
+          style={{
+            padding: '4px 12px', backgroundColor: '#333', color: '#e0e0e0',
+            border: '1px solid #444', borderRadius: '4px', cursor: 'pointer', fontSize: '12px'
+          }}
+        >Reconnect</button>
       </div>
     </div>
   )

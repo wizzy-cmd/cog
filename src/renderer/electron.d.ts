@@ -115,6 +115,18 @@ declare global {
       listCustomWorkspaceThemes: () => Promise<WorkspaceTheme[]>
       saveCustomWorkspaceTheme: (theme: WorkspaceTheme) => Promise<{ success: boolean }>
       deleteCustomWorkspaceTheme: (id: string) => Promise<{ success: boolean }>
+      // Voice recorder — Stream Deck integration
+      onVoiceStart(cb: () => void): () => void
+      onVoiceStop(cb: () => void): () => void
+      sendVoiceAudio(audio: ArrayBuffer): void
+      // Stream Deck status + reconnect
+      getStreamDeckStatus(): Promise<'connected' | 'disconnected'>
+      reconnectStreamDeck(): Promise<void>
+      // Stream Deck → renderer panel hooks
+      onStreamDeckOpenPanel(cb: (panel: string) => void): () => void
+      onStreamDeckFocusAgent(cb: (name: string) => void): () => void
+      onStreamDeckMarkRead(cb: (kind: string) => void): () => void
+      onStreamDeckToast(cb: (msg: string) => void): () => void
     }
   }
 }
