@@ -36,6 +36,12 @@ export class KeyRenderer {
     this.size = opts.size
   }
 
+  /**
+   * Returns the final raw RGBA pixel buffer (size * size * 4 bytes) ready
+   * to hand to Stream Deck `fillKeyBuffer(idx, buf, { format: 'rgba' })`.
+   * Composite intermediates use PNG-in-SVG embedding; only the final pass
+   * extracts pixels.
+   */
   async render(input: RenderInput): Promise<Buffer> {
     const key = this.cacheKey('face', input.faceSvg, input.tint, input.badge, input.label)
     const hit = this.cache.get(key)
@@ -47,8 +53,9 @@ export class KeyRenderer {
     if (input.badge) png = this.drawBadge(png, input.badge)
     if (input.label) png = this.drawLabel(png, input.label)
 
-    this.cache.set(key, png)
-    return png
+    const pixels = this.toPixels(png)
+    this.cache.set(key, pixels)
+    return pixels
   }
 
   async renderText(input: RenderTextInput): Promise<Buffer> {
@@ -67,8 +74,25 @@ export class KeyRenderer {
     png = this.applyTint(png, input.tint)
     if (input.badge) png = this.drawBadge(png, input.badge)
 
-    this.cache.set(key, png)
-    return png
+    const pixels = this.toPixels(png)
+    this.cache.set(key, pixels)
+    return pixels
+  }
+
+  /**
+   * Convert a final PNG buffer to a raw RGBA pixel buffer by re-rasterizing
+   * it inside a wrapper SVG. One extra Resvg call per cache miss; cache hits
+   * skip this step.
+   */
+  private toPixels(png: Buffer): Buffer {
+    const wrapper = `<svg xmlns="http://www.w3.org/2000/svg" width="${this.size}" height="${this.size}">
+      <image href="data:image/png;base64,${png.toString('base64')}" width="${this.size}" height="${this.size}"/>
+    </svg>`
+    const r = new Resvg(wrapper, {
+      fitTo: { mode: 'width', value: this.size },
+      background: '#1a1a1a',
+    })
+    return r.render().pixels
   }
 
   clearCache(): void {

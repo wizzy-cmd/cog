@@ -86,7 +86,8 @@ export async function initStreamDeck(opts: InitOpts): Promise<void> {
     const handle: StreamDeckHandle = {
       NUM_KEYS: numKeys,
       KEY_COLUMNS: keyColumns,
-      setKeyImage: (i, png) => raw.fillKeyBuffer(i, png) as Promise<void>,
+      // KeyRenderer outputs raw RGBA pixels; tell the lib to skip PNG decoding.
+      setKeyImage: (i, pixels) => raw.fillKeyBuffer(i, pixels, { format: 'rgba' }) as Promise<void>,
       clearAllKeys: () => raw.clearPanel() as Promise<void>,
       close: () => raw.close() as Promise<void>,
       on: (e, cb) => {

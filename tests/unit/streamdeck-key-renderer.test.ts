@@ -5,13 +5,12 @@ import path from 'node:path'
 const svgRoot = path.resolve(__dirname, '../../src/main/streamdeck/assets/cogsworth')
 
 describe('KeyRenderer', () => {
-  it('renders a 72x72 PNG buffer for a known SVG', async () => {
+  it('renders a 72x72 RGBA pixel buffer for a known SVG', async () => {
     const r = new KeyRenderer({ svgRoot, size: 72 })
-    const png = await r.render({ faceSvg: 'cogsworth-happy.svg', tint: 'none' })
-    expect(png).toBeInstanceOf(Buffer)
-    // PNG file signature = 0x89 0x50 0x4E 0x47
-    expect(png[0]).toBe(0x89)
-    expect(png[1]).toBe(0x50)
+    const buf = await r.render({ faceSvg: 'cogsworth-happy.svg', tint: 'none' })
+    expect(buf).toBeInstanceOf(Buffer)
+    // 72 * 72 * 4 (RGBA) = 20736 bytes — what fillKeyBuffer expects with format: 'rgba'
+    expect(buf.byteLength).toBe(72 * 72 * 4)
   })
 
   it('caches identical renders (returns same buffer reference)', async () => {
