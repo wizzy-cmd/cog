@@ -1,6 +1,6 @@
 import type { AgentStatus } from '../../shared/types'
 
-// SVG file names in marketing/cogsworth/ that we use.
+// SVG file names in src/main/streamdeck/assets/cogsworth/ that we use.
 export const MOODS = {
   neutral: 'cogsworth-neutral.svg',
   thinking: 'cogsworth-thinking.svg',
