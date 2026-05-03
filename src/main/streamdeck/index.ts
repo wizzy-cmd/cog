@@ -35,6 +35,7 @@ let bridge: StreamDeckBridge | null = null
 let coord: VoiceCoordinator | null = null
 let pollTimer: NodeJS.Timeout | null = null
 let lastSerial: string | null = null
+let voiceAudioHandler: ((event: unknown, audio: ArrayBuffer) => void) | null = null
 
 export interface InitOpts {
   registry: AgentRegistry
@@ -135,9 +136,10 @@ export async function initStreamDeck(opts: InitOpts): Promise<void> {
     console.log(`[streamdeck] connected MK.2 (serial: ${lastSerial})`)
   }
 
-  ipcMain.on(IPC.VOICE_AUDIO, (_e, audio: ArrayBuffer) => {
-    coord?.handleAudio(audio)
-  })
+  // Captured here so dispose can detach this exact handler reference.
+  const onVoiceAudio = (_e: unknown, audio: ArrayBuffer) => coord?.handleAudio(audio)
+  ipcMain.on(IPC.VOICE_AUDIO, onVoiceAudio)
+  voiceAudioHandler = onVoiceAudio
 
   await tryOpen()
 
@@ -149,6 +151,10 @@ export async function initStreamDeck(opts: InitOpts): Promise<void> {
 
 export async function disposeStreamDeck(): Promise<void> {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+  if (voiceAudioHandler) {
+    ipcMain.removeListener(IPC.VOICE_AUDIO, voiceAudioHandler)
+    voiceAudioHandler = null
+  }
   if (bridge) {
     await bridge.dispose().catch(() => {})
     bridge = null
