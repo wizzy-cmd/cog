@@ -52,10 +52,17 @@ export function buildBridgeActions(deps: ActionDeps): BridgeActions & {
       void deps.loadPreset(name)
     },
     onTranscript: (text) => {
-      // Terminal TUIs (Claude Code, Kimi, Gemini, Codex) treat \r as the
-      // Enter keypress — \n alone just adds a newline without submitting.
-      const ok = deps.writeToOrchestratorPty(text + '\r')
-      if (!ok) deps.notifyToast('No orchestrator running — voice transcript dropped.')
+      // Claude Code's TUI runs in bracketed-paste mode: a bulk write that
+      // contains \r is treated as a paste with a literal newline embedded,
+      // NOT a submit. Send the text first, give the terminal a moment to
+      // finish the paste, then send \r as a separate "keystroke" that
+      // actually submits.
+      const ok = deps.writeToOrchestratorPty(text)
+      if (!ok) {
+        deps.notifyToast('No orchestrator running — voice transcript dropped.')
+        return
+      }
+      setTimeout(() => deps.writeToOrchestratorPty('\r'), 80)
     },
     onVoiceState: (_s) => { /* could update LCD in the future */ },
     onVoiceError: (err) => { deps.notifyToast(`Whisper error: ${(err as Error).message}`) },
