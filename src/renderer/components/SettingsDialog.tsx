@@ -1023,6 +1023,7 @@ function StreamDeckSection(): React.ReactElement {
   const [sdSettings, setSdSettings] = React.useState<{ enabled: boolean; whisperBackend: 'cloud' | 'local' | 'disabled'; openaiApiKey?: string }>({ enabled: true, whisperBackend: 'cloud' })
   const [showKey, setShowKey] = React.useState(false)
   const [connection, setConnection] = React.useState<'connected' | 'disconnected' | 'unknown'>('unknown')
+  const [localProgress, setLocalProgress] = React.useState<{ stage: string; percent: number; detail?: string } | null>(null)
 
   React.useEffect(() => {
     void electronAPI.getSettings().then((all: Record<string, unknown>) => {
@@ -1030,12 +1031,25 @@ function StreamDeckSection(): React.ReactElement {
       if (s) setSdSettings(prev => ({ ...prev, ...s }))
     })
     void window.electronAPI.getStreamDeckStatus?.().then((s: 'connected' | 'disconnected') => setConnection(s))
+
+    // Subscribe to local Whisper setup progress events.
+    const off = window.electronAPI.onLocalWhisperProgress?.((evt) => setLocalProgress(evt))
+    return () => off?.()
   }, [])
 
   const update = async (patch: Partial<typeof sdSettings>) => {
     const next = { ...sdSettings, ...patch }
     setSdSettings(next)
     await electronAPI.setSetting('streamdeck', next)
+    // When user switches TO local, kick off setup. The handler is idempotent —
+    // if everything is already in place, fires a single ready event and returns.
+    if (patch.whisperBackend === 'local') {
+      setLocalProgress({ stage: 'model', percent: 0, detail: 'Checking local Whisper setup…' })
+      void window.electronAPI.prepareLocalWhisper?.()
+    } else if (patch.whisperBackend !== undefined) {
+      // Switched away from local — clear the bar
+      setLocalProgress(null)
+    }
   }
 
   const rowStyle: React.CSSProperties = {
@@ -1087,6 +1101,51 @@ function StreamDeckSection(): React.ReactElement {
           ))}
         </div>
       </div>
+
+      {sdSettings.whisperBackend === 'local' && localProgress && (
+        <div style={{ ...rowStyle, flexDirection: 'column', alignItems: 'stretch', gap: '6px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: '13px', color: '#e0e0e0' }}>
+              {localProgress.stage === 'ready'
+                ? 'Local Whisper ready'
+                : localProgress.stage === 'error'
+                  ? 'Setup failed'
+                  : localProgress.stage === 'model'
+                    ? 'Downloading model'
+                    : localProgress.stage === 'configure'
+                      ? 'Configuring CMake'
+                      : 'Building whisper.cpp'}
+            </div>
+            <div style={{ fontSize: '11px', color: '#888' }}>{localProgress.percent}%</div>
+          </div>
+          <div style={{ height: 6, backgroundColor: '#1a1a1a', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{
+              width: `${localProgress.percent}%`,
+              height: '100%',
+              backgroundColor: localProgress.stage === 'error' ? '#ef4444' : localProgress.stage === 'ready' ? '#4caf50' : '#3b82f6',
+              transition: 'width 0.3s ease',
+            }} />
+          </div>
+          {localProgress.detail && (
+            <div style={{ fontSize: '10px', color: '#666', fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {localProgress.detail}
+            </div>
+          )}
+          {localProgress.stage === 'error' && (
+            <button
+              type="button"
+              onClick={() => {
+                setLocalProgress({ stage: 'model', percent: 0, detail: 'Retrying…' })
+                void window.electronAPI.prepareLocalWhisper?.()
+              }}
+              style={{
+                padding: '4px 12px', backgroundColor: '#333', color: '#e0e0e0',
+                border: '1px solid #444', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', alignSelf: 'flex-start'
+              }}
+            >Retry</button>
+          )}
+        </div>
+      )}
 
       {sdSettings.whisperBackend === 'cloud' && (
         <div style={rowStyle}>

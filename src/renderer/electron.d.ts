@@ -128,6 +128,8 @@ declare global {
       onStreamDeckMarkRead(cb: (kind: string) => void): () => void
       onStreamDeckToast(cb: (msg: string) => void): () => void
       onStreamDeckRunPreset(cb: (name: string) => void): () => void
+      prepareLocalWhisper(): Promise<{ ok: boolean; error?: string }>
+      onLocalWhisperProgress(cb: (evt: { stage: string; percent: number; detail?: string }) => void): () => void
     }
   }
 }

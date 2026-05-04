@@ -244,6 +244,8 @@ export const IPC = {
   // Stream Deck status + reconnect
   STREAMDECK_STATUS: 'streamdeck:status',
   STREAMDECK_RECONNECT: 'streamdeck:reconnect',
+  STREAMDECK_LOCAL_PREPARE: 'streamdeck:local-prepare',
+  STREAMDECK_LOCAL_PROGRESS: 'streamdeck:local-progress',
 } as const
 
 export interface Skill {

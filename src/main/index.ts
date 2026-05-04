@@ -38,6 +38,7 @@ import type { AgentConfig, AgentTheme, RemoteSetupProgress, CommunityAgent, Comm
 import { IPC } from '../shared/types'
 import { validateRespawnRequest } from './respawn-validation'
 import { initStreamDeck, disposeStreamDeck, resolveCogsworthDir, getStreamDeckStatus, reconnectStreamDeck } from './streamdeck'
+import { prepareLocalWhisper, isLocalWhisperReady } from './streamdeck/local-whisper-prepare'
 
 let hub: HubServer
 let mainWindow: BrowserWindow
@@ -2732,6 +2733,25 @@ async function main(): Promise<void> {
 
   ipcMain.handle(IPC.STREAMDECK_STATUS, () => getStreamDeckStatus())
   ipcMain.handle(IPC.STREAMDECK_RECONNECT, () => reconnectStreamDeck(streamDeckInitOpts))
+
+  // Local Whisper setup: streams progress events to the renderer's settings UI.
+  // Idempotent — re-invoking after success is a no-op that returns 'ready' immediately.
+  ipcMain.handle(IPC.STREAMDECK_LOCAL_PREPARE, async () => {
+    try {
+      if (isLocalWhisperReady('base.en')) {
+        mainWindow?.webContents.send(IPC.STREAMDECK_LOCAL_PROGRESS, { stage: 'ready', percent: 100 })
+        return { ok: true }
+      }
+      await prepareLocalWhisper((evt) => {
+        mainWindow?.webContents.send(IPC.STREAMDECK_LOCAL_PROGRESS, evt)
+      }, 'base.en')
+      return { ok: true }
+    } catch (err) {
+      const message = (err as Error).message
+      mainWindow?.webContents.send(IPC.STREAMDECK_LOCAL_PROGRESS, { stage: 'error', percent: 0, detail: message })
+      return { ok: false, error: message }
+    }
+  })
 }
 
 main()

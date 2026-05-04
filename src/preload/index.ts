@@ -286,4 +286,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('streamdeck:run-preset', handler)
     return () => ipcRenderer.removeListener('streamdeck:run-preset', handler)
   },
+  // Local Whisper setup
+  prepareLocalWhisper: () => ipcRenderer.invoke(IPC.STREAMDECK_LOCAL_PREPARE),
+  onLocalWhisperProgress: (cb: (evt: { stage: string; percent: number; detail?: string }) => void) => {
+    const handler = (_e: unknown, evt: { stage: string; percent: number; detail?: string }) => cb(evt)
+    ipcRenderer.on(IPC.STREAMDECK_LOCAL_PROGRESS, handler)
+    return () => ipcRenderer.removeListener(IPC.STREAMDECK_LOCAL_PROGRESS, handler)
+  },
 })
