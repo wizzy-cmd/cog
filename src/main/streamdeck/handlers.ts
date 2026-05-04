@@ -52,7 +52,9 @@ export function buildBridgeActions(deps: ActionDeps): BridgeActions & {
       void deps.loadPreset(name)
     },
     onTranscript: (text) => {
-      const ok = deps.writeToOrchestratorPty(text + '\n')
+      // Terminal TUIs (Claude Code, Kimi, Gemini, Codex) treat \r as the
+      // Enter keypress — \n alone just adds a newline without submitting.
+      const ok = deps.writeToOrchestratorPty(text + '\r')
       if (!ok) deps.notifyToast('No orchestrator running — voice transcript dropped.')
     },
     onVoiceState: (_s) => { /* could update LCD in the future */ },
