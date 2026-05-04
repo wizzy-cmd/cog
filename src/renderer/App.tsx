@@ -120,12 +120,18 @@ export function App(): React.ReactElement {
     })
   }, [setZoom, setPan, addWindowAt, addWindow, spawnAgent, getStatusColor, activeTabId])
 
-  // Stream Deck preset-key handler: fetch the preset JSON, then apply it.
+  // Stream Deck preset-key handler: fetch the preset, prompt for a working
+  // directory (mirrors the existing PresetDialog cwd-override flow), then apply.
   useEffect(() => {
     const off = window.electronAPI.onStreamDeckRunPreset(async (name) => {
       try {
         const preset = await window.electronAPI.loadPreset(name)
-        const configs = preset.agents.map(({ id: _id, ...rest }: AgentConfig) => rest)
+        const cwd = await window.electronAPI.browseDirectory('')
+        if (!cwd) return // user canceled the folder picker
+        const configs = preset.agents.map(({ id: _id, ...rest }: AgentConfig) => ({
+          ...rest,
+          cwd,
+        }))
         const savedWindows: WindowPosition[] = preset.windows || []
         const savedCanvas: CanvasState = preset.canvas || { zoom: 1, panX: 0, panY: 0 }
         applyPreset(configs, savedWindows, savedCanvas)

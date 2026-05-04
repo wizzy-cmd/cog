@@ -93,7 +93,13 @@ export class LocalWhisperClient implements WhisperClient {
         withCuda: false,
         whisperOptions: { outputInText: true, outputInJson: false },
       } as Parameters<typeof nodewhisper>[1])
-      return (typeof result === 'string' ? result : '').trim()
+      // whisper-cli prefixes each line with [HH:MM:SS.mmm --> HH:MM:SS.mmm]
+      // segment timestamps. We just want the text fed into the orchestrator's PTY.
+      const raw = typeof result === 'string' ? result : ''
+      return raw
+        .replace(/^\s*\[\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}\]\s*/gm, '')
+        .replace(/\s+/g, ' ')
+        .trim()
     } finally {
       try { fs.rmSync(tmp, { force: true }) } catch { /* best-effort */ }
     }
