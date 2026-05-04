@@ -26,16 +26,49 @@ const NODEJS_WHISPER_DIR = path.join(
 )
 const MODELS_DIR = path.join(NODEJS_WHISPER_DIR, 'models')
 const BUILD_DIR = path.join(NODEJS_WHISPER_DIR, 'build')
-const WHISPER_CLI = process.platform === 'win32'
+
+// nodejs-whisper expects build/bin/Release/whisper-cli.exe (Visual Studio
+// multi-config layout). On a system that picks MinGW/MSYS or another
+// single-config CMake generator, the binary lands at build/bin/whisper-cli.exe
+// instead. We track BOTH and mirror after a successful build.
+const WHISPER_CLI_EXPECTED = process.platform === 'win32'
   ? path.join(BUILD_DIR, 'bin', 'Release', 'whisper-cli.exe')
   : path.join(BUILD_DIR, 'bin', 'whisper-cli')
+const WHISPER_CLI_FALLBACK = process.platform === 'win32'
+  ? path.join(BUILD_DIR, 'bin', 'whisper-cli.exe')
+  : null
 
 const MODEL_FILE = (model: string) => path.join(MODELS_DIR, `ggml-${model}.bin`)
 
 const BUILD_PERCENT_RE = /^\s*\[\s*(\d+)%\]/
 
 export function isLocalWhisperReady(model = 'base.en'): boolean {
-  return fs.existsSync(MODEL_FILE(model)) && fs.existsSync(WHISPER_CLI)
+  return fs.existsSync(MODEL_FILE(model)) && fs.existsSync(WHISPER_CLI_EXPECTED)
+}
+
+/**
+ * If the build produced whisper-cli at build/bin/ instead of build/bin/Release/
+ * (single-config CMake generator like MinGW/MSYS/Ninja), copy the binary and
+ * its sibling DLLs into the Release subdir so nodejs-whisper can find it.
+ */
+function mirrorBinaryToReleaseDir(): boolean {
+  if (process.platform !== 'win32' || !WHISPER_CLI_FALLBACK) return false
+  if (fs.existsSync(WHISPER_CLI_EXPECTED)) return true
+  if (!fs.existsSync(WHISPER_CLI_FALLBACK)) return false
+
+  const srcDir = path.dirname(WHISPER_CLI_FALLBACK)
+  const dstDir = path.dirname(WHISPER_CLI_EXPECTED)
+  fs.mkdirSync(dstDir, { recursive: true })
+
+  // Copy whisper-cli.exe + every *.dll alongside it (whisper-cli depends on
+  // ggml/whisper DLLs being on the same dir or PATH).
+  const items = fs.readdirSync(srcDir)
+  for (const name of items) {
+    if (name === 'whisper-cli.exe' || name.endsWith('.dll')) {
+      fs.copyFileSync(path.join(srcDir, name), path.join(dstDir, name))
+    }
+  }
+  return fs.existsSync(WHISPER_CLI_EXPECTED)
 }
 
 /**
@@ -102,7 +135,14 @@ export async function prepareLocalWhisper(
   }
 
   if (!isLocalWhisperReady(model)) {
-    throw new Error('Local Whisper setup ran but artifacts are still missing')
+    // Maybe the build produced whisper-cli at build/bin/ instead of
+    // build/bin/Release/ (MinGW/Ninja single-config generators do this).
+    // Mirror it into the expected location.
+    onProgress({ stage: 'build', percent: 100, detail: 'Mirroring binary to Release/ for nodejs-whisper compatibility…' })
+    const mirrored = mirrorBinaryToReleaseDir()
+    if (!mirrored) {
+      throw new Error('Local Whisper setup ran but whisper-cli.exe was not produced. Check the dev console for CMake errors.')
+    }
   }
   onProgress({ stage: 'ready', percent: 100, detail: 'Local Whisper ready' })
 }
