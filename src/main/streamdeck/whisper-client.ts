@@ -69,6 +69,18 @@ export class LocalWhisperClient implements WhisperClient {
     const tmp = path.join(os.tmpdir(), `cog-whisper-${randomBytes(6).toString('hex')}.webm`)
     fs.writeFileSync(tmp, Buffer.from(audio))
     try {
+      // nodejs-whisper uses shelljs.exec('node ...') under the hood. In Electron
+      // process.execPath is electron.exe, so shelljs's auto-detection of node
+      // fails ("Unable to find a path to the node binary"). Resolve a real node
+      // binary from PATH and tell shelljs about it before invoking the lib.
+      const shell = await import('shelljs') as { default?: { config: { execPath: string | null }; which: (cmd: string) => string | null }; config?: { execPath: string | null }; which?: (cmd: string) => string | null }
+      const sh = (shell.default ?? shell) as { config: { execPath: string | null }; which: (cmd: string) => string | null }
+      if (!sh.config.execPath) {
+        const found = sh.which('node')
+        if (found) sh.config.execPath = String(found)
+        else throw new Error('Local Whisper requires `node` on PATH (couldn\'t locate it). Install Node.js or use Cloud Whisper.')
+      }
+
       const { nodewhisper } = await import('nodejs-whisper')
       const result = await nodewhisper(tmp, {
         modelName: this.model,
