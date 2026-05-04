@@ -4,6 +4,7 @@ import { computeLayout } from './layout'
 import { KeyRenderer } from './key-renderer'
 import { moodForStatus, MOODS } from './mood'
 import type { KeyDescriptor } from './types'
+import type { VoiceState } from './voice-coordinator'
 
 export interface StreamDeckHandle {
   NUM_KEYS: number
@@ -42,19 +43,30 @@ export class StreamDeckBridge {
   private pressedAt: Map<number, number> = new Map()
   private holdMs = 1500
   private holdMsPanic = 2000
+  private voiceState: VoiceState = 'idle'
+
+  /** Called by the VoiceCoordinator on state transitions; tints the 🎙️ key. */
+  setVoiceState(state: VoiceState): void {
+    if (this.voiceState === state) return
+    this.voiceState = state
+    this.scheduleRerender()
+  }
 
   private handleKeyDown = (index: unknown) => {
+    console.log(`[streamdeck] bridge handleKeyDown: index=${index} (type=${typeof index})`)
     if (typeof index !== 'number') return
     this.pressedAt.set(index, Date.now())
   }
 
   private handleKeyUp = (index: unknown) => {
+    console.log(`[streamdeck] bridge handleKeyUp: index=${index} pressed=${this.pressedAt.has(index as number)}`)
     if (typeof index !== 'number') return
     const downAt = this.pressedAt.get(index)
     this.pressedAt.delete(index)
     if (downAt === undefined) return
     const heldFor = Date.now() - downAt
     const desc = this.lastDescriptorFor(index)
+    console.log(`[streamdeck] bridge handleKeyUp: heldFor=${heldFor}ms desc=${JSON.stringify(desc)}`)
     if (!desc) return
 
     const threshold = (desc.kind === 'action' && desc.action === 'panic') ? this.holdMsPanic : this.holdMs
@@ -137,7 +149,10 @@ export class StreamDeckBridge {
       unread: this.opts.getUnread(),
     })
     await Promise.all(layout.map(async (k) => {
-      const sig = JSON.stringify({ k: k.kind, n: k.agent?.name, s: k.agent?.status, a: k.action, p: k.preset?.name, e: k.empty })
+      // Voice state is folded into the voice key's signature so a state change
+      // (idle ↔ recording ↔ transcribing) triggers a re-render with a fresh tint.
+      const vs = k.action === 'voice' ? this.voiceState : undefined
+      const sig = JSON.stringify({ k: k.kind, n: k.agent?.name, s: k.agent?.status, a: k.action, p: k.preset?.name, e: k.empty, vs })
       if (!force && this.lastRendered.get(k.index) === sig) return
       this.lastRendered.set(k.index, sig)
       await this.renderKey(k)
@@ -175,7 +190,12 @@ export class StreamDeckBridge {
         : key.action === 'trollbox' && unread.trollbox > 0 ? String(unread.trollbox)
         : key.action === 'stale' && unread.stale > 0 ? String(unread.stale)
         : undefined
-      return this.renderer.renderText({ label: labelMap[key.action!], tint: 'none', badge })
+      // Tint the 🎙️ key red while recording, orange while transcribing, default otherwise.
+      const tint =
+        key.action === 'voice' && this.voiceState === 'recording' ? 'red'
+        : key.action === 'voice' && this.voiceState === 'transcribing' ? 'orange'
+        : 'none'
+      return this.renderer.renderText({ label: labelMap[key.action!], tint, badge })
     }
     if (key.kind === 'preset' && key.preset) {
       return this.renderer.renderText({

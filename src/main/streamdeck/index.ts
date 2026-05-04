@@ -131,6 +131,8 @@ export async function initStreamDeck(opts: InitOpts): Promise<void> {
       onState: (s) => {
         console.log(`[streamdeck] voice: state → ${s}`)
         actions.onVoiceState(s)
+        // Tint the 🎙️ key on the deck so the user can see they're recording.
+        bridge?.setVoiceState(s)
       },
       onError: (err) => {
         console.warn(`[streamdeck] voice: error`, err)
