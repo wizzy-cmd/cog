@@ -477,22 +477,38 @@ export function App(): React.ReactElement {
   }, [editingAgentId, agents])
 
   // Stream Deck → renderer panel hooks
-  // TODO: wire onStreamDeckOpenPanel into panel toggles (toggleInbox, toggleTrollbox, etc.)
-  // TODO: wire onStreamDeckFocusAgent into agent focus state
-  // TODO: wire onStreamDeckMarkRead into inbox/trollbox mark-read
-  // TODO: wire onStreamDeckToast into toast notification system
   useEffect(() => {
-    const unsubPanel = window.electronAPI.onStreamDeckOpenPanel((_panel) => {
-      // Stub: panels are exposed but not yet wired into panel-switching state
+    const unsubPanel = window.electronAPI.onStreamDeckOpenPanel((panel) => {
+      const baseId =
+        panel === 'inbox' ? INBOX_ID
+        : panel === 'trollbox' ? TROLLBOX_ID
+        // 'stale' tasks live in the pinboard panel (no separate stale panel exists).
+        : panel === 'stale' ? PINBOARD_ID
+        : null
+      if (!baseId) return
+      const id = panelIdForTab(baseId, activeTabId)
+      const isOpen = tabWindows.some(w => w.id === id)
+      if (!isOpen) {
+        const title = panel === 'inbox' ? 'Inbox' : panel === 'trollbox' ? 'Trollbox' : 'Pinboard'
+        addWindow(id, title, undefined, activeTabId)
+      }
+      focusWindow(id)
     })
-    const unsubFocus = window.electronAPI.onStreamDeckFocusAgent((_name) => {
-      // Stub: agent focus not yet wired
+    const unsubFocus = window.electronAPI.onStreamDeckFocusAgent((name) => {
+      // Agent windows are keyed by agent.id, but the bridge sends agent.name.
+      // Find the agent in the registry → focus its window by id.
+      const agent = agents.find(a => a.name === name)
+      if (agent?.id) focusWindow(agent.id)
     })
-    const unsubRead = window.electronAPI.onStreamDeckMarkRead((_kind) => {
-      // Stub: mark-read not yet wired
+    const unsubRead = window.electronAPI.onStreamDeckMarkRead((kind) => {
+      // Mark-read for inbox/trollbox. The renderer doesn't currently track unread
+      // counts (that lives in panel components themselves), so this is a no-op for
+      // now — main process surfaces 0 in getUnread() until the count plumbing is added.
+      console.log('[streamdeck] mark-read requested for', kind, '(no-op until unread plumbing lands)')
     })
-    const unsubToast = window.electronAPI.onStreamDeckToast((_msg) => {
-      // Stub: toast not yet wired
+    const unsubToast = window.electronAPI.onStreamDeckToast((msg) => {
+      // No toast system yet — log + window.alert as a stopgap so failures aren't silent.
+      console.warn('[streamdeck toast]', msg)
     })
     return () => {
       unsubPanel()
@@ -500,7 +516,7 @@ export function App(): React.ReactElement {
       unsubRead()
       unsubToast()
     }
-  }, [])
+  }, [agents, tabWindows, activeTabId, addWindow, focusWindow])
 
   const handleProjectOpened = useCallback((p: RecentProject) => {
     setProject(p)

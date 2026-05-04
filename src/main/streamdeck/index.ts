@@ -95,6 +95,7 @@ export async function initStreamDeck(opts: InitOpts): Promise<void> {
           // The library emits (control: StreamDeckButtonControlDefinition | StreamDeckEncoderControlDefinition)
           // The bridge expects (index: number) — extract .index here
           raw.on(e as 'down' | 'up', (control: StreamDeckButtonControlDefinition | StreamDeckEncoderControlDefinition) => {
+            console.log(`[streamdeck] raw ${e} event: type=${control.type} index=${(control as { index?: number }).index}`)
             if (control.type === 'button') cb(control.index)
           })
         }
@@ -111,12 +112,30 @@ export async function initStreamDeck(opts: InitOpts): Promise<void> {
     }
 
     const whisper = buildWhisperClient(settings)
+    console.log(`[streamdeck] voice: backend=${settings.whisperBackend} apiKey=${settings.openaiApiKey ? 'set' : 'not set'} client=${whisper ? whisper.constructor.name : 'null'}`)
     coord = new VoiceCoordinator({
-      sendStart: () => opts.mainWindow()?.webContents.send(IPC.VOICE_START),
-      sendStop:  () => opts.mainWindow()?.webContents.send(IPC.VOICE_STOP),
-      onTranscript: (text) => actions.onTranscript(text),
-      onState: (s) => actions.onVoiceState(s),
-      onError: (err) => actions.onVoiceError(err),
+      sendStart: () => {
+        const w = opts.mainWindow()
+        console.log(`[streamdeck] voice: sendStart → mainWindow=${w ? 'ok' : 'NULL'}`)
+        w?.webContents.send(IPC.VOICE_START)
+      },
+      sendStop: () => {
+        const w = opts.mainWindow()
+        console.log(`[streamdeck] voice: sendStop → mainWindow=${w ? 'ok' : 'NULL'}`)
+        w?.webContents.send(IPC.VOICE_STOP)
+      },
+      onTranscript: (text) => {
+        console.log(`[streamdeck] voice: onTranscript text="${text}"`)
+        actions.onTranscript(text)
+      },
+      onState: (s) => {
+        console.log(`[streamdeck] voice: state → ${s}`)
+        actions.onVoiceState(s)
+      },
+      onError: (err) => {
+        console.warn(`[streamdeck] voice: error`, err)
+        actions.onVoiceError(err)
+      },
       getWhisper: () => whisper,
     })
 
@@ -138,7 +157,10 @@ export async function initStreamDeck(opts: InitOpts): Promise<void> {
   }
 
   // Captured here so dispose can detach this exact handler reference.
-  const onVoiceAudio = (_e: unknown, audio: ArrayBuffer) => coord?.handleAudio(audio)
+  const onVoiceAudio = (_e: unknown, audio: ArrayBuffer) => {
+    console.log(`[streamdeck] voice: received audio buffer (${audio?.byteLength ?? 'undefined'} bytes), coord=${coord ? 'set' : 'null'}`)
+    coord?.handleAudio(audio)
+  }
   ipcMain.on(IPC.VOICE_AUDIO, onVoiceAudio)
   voiceAudioHandler = onVoiceAudio
 

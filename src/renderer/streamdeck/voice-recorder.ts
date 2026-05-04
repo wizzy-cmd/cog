@@ -36,9 +36,11 @@ export function mountVoiceRecorder(): () => void {
   }
 
   const startCapture = async () => {
+    console.log('[voice-recorder] startCapture: requesting mic')
     if (recorder) return  // already recording
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      console.log('[voice-recorder] startCapture: got stream, starting MediaRecorder')
       recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
       recorder.addEventListener('dataavailable', (e) => {
         if (e.data.size > 0) chunks.push(e.data)
@@ -52,8 +54,15 @@ export function mountVoiceRecorder(): () => void {
     }
   }
 
-  const offStart = window.electronAPI.onVoiceStart(() => { void startCapture() })
-  const offStop = window.electronAPI.onVoiceStop(() => { void stopAndShip() })
+  console.log('[voice-recorder] mounted, waiting for voice:start IPC')
+  const offStart = window.electronAPI.onVoiceStart(() => {
+    console.log('[voice-recorder] received voice:start IPC')
+    void startCapture()
+  })
+  const offStop = window.electronAPI.onVoiceStop(() => {
+    console.log('[voice-recorder] received voice:stop IPC')
+    void stopAndShip()
+  })
 
   return () => {
     offStart()
