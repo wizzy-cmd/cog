@@ -106,7 +106,11 @@ export async function prepareLocalWhisper(
   }
 
   // Step 2: cmake configure (10–20% of overall progress)
-  if (!fs.existsSync(WHISPER_CLI)) {
+  // Build is needed if neither the expected (VS Release) nor fallback (MinGW) binary exists.
+  const buildBinaryExists =
+    fs.existsSync(WHISPER_CLI_EXPECTED) ||
+    (WHISPER_CLI_FALLBACK !== null && fs.existsSync(WHISPER_CLI_FALLBACK))
+  if (!buildBinaryExists) {
     onProgress({ stage: 'configure', percent: 10, detail: 'Configuring CMake…' })
     await runCommand({
       cmd: 'cmake',
