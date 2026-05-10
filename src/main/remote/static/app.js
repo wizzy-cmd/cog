@@ -10,6 +10,9 @@
   let pollHandle = null
   let agents = []
   let lastState = null  // cache full state for panel detail views
+  // Per-panel poll for inbox/trollbox detail views. Only one is alive at a
+  // time — opening or switching panels clears the prior interval.
+  let panelPollHandle = null
 
   function statusMessage(text, kind) {
     const el = $('status-message')
@@ -41,6 +44,7 @@
   function showDisconnected() {
     $('disconnected-overlay').classList.remove('hidden')
     if (pollHandle) { clearInterval(pollHandle); pollHandle = null }
+    if (panelPollHandle) { clearInterval(panelPollHandle); panelPollHandle = null }
   }
 
   function render(state) {
@@ -75,6 +79,26 @@
       workshopBtn.classList.remove('hidden')
     } else {
       workshopBtn.classList.add('hidden')
+    }
+
+    syncInboxBadges(state.inboxUnread || 0)
+  }
+
+  // Mirror state.inboxUnread onto the two pill surfaces and the panels-menu
+  // inline count. Server is the source of truth; we never mutate the count
+  // optimistically — marking a message read POSTs and the next poll updates.
+  function syncInboxBadges(count) {
+    const display = count > 9 ? '9+' : String(count)
+    for (const id of ['workshop-btn-unread-pill', 'workshop-panels-btn-unread-pill', 'panels-menu-inbox-pill']) {
+      const el = document.getElementById(id)
+      if (!el) continue
+      if (count > 0) {
+        el.textContent = display
+        el.classList.add('visible')
+      } else {
+        el.textContent = ''
+        el.classList.remove('visible')
+      }
     }
   }
 
@@ -503,6 +527,7 @@
     $('header').classList.remove('hidden')
     if (workshopPollHandle) { clearInterval(workshopPollHandle); workshopPollHandle = null }
     if (detailPollHandle) { clearInterval(detailPollHandle); detailPollHandle = null }
+    if (panelPollHandle) { clearInterval(panelPollHandle); panelPollHandle = null }
     currentDetailAgent = null
   }
 
@@ -812,12 +837,14 @@
     if (detailPollHandle) { clearInterval(detailPollHandle); detailPollHandle = null }
   }
 
-  // Panel detail views (pinboard, info)
+  // Panel detail views (pinboard, info, inbox, trollbox)
   function openPanelDetail(win) {
     const panelType = (win.panelType || win.title || '').toLowerCase()
     $('workshop-view').classList.add('hidden')
     $('workshop-panel').classList.remove('hidden')
     $('panel-title').textContent = win.title || panelType
+
+    if (panelPollHandle) { clearInterval(panelPollHandle); panelPollHandle = null }
 
     const content = $('panel-content')
     if (panelType.includes('pinboard')) {
@@ -826,6 +853,12 @@
       renderPanelInfo(content)
     } else if (panelType.includes('schedule')) {
       renderPanelSchedules(content)
+    } else if (panelType.includes('inbox')) {
+      renderPanelInbox(content)
+      panelPollHandle = setInterval(() => renderPanelInbox(content), 5000)
+    } else if (panelType.includes('trollbox')) {
+      renderPanelTrollbox(content)
+      panelPollHandle = setInterval(() => renderPanelTrollbox(content), 3000)
     } else {
       content.innerHTML = '<div style="color:#666;padding:20px;text-align:center">Panel view not available</div>'
     }
@@ -834,6 +867,7 @@
   function closePanelDetail() {
     $('workshop-panel').classList.add('hidden')
     $('workshop-view').classList.remove('hidden')
+    if (panelPollHandle) { clearInterval(panelPollHandle); panelPollHandle = null }
   }
 
   $('panel-back').addEventListener('click', closePanelDetail)
@@ -956,6 +990,292 @@
         }).join('')}
       </div>
     `
+  }
+
+  // Message ids whose card is in a live user interaction (reject input
+  // revealed, or an approve/reject in flight). While this set is non-empty,
+  // the inbox poll skips its repaint so we don't wipe a user's typed feedback.
+  const inboxInteractionLocks = new Set()
+
+  function relativeTime(iso) {
+    if (!iso) return ''
+    const ms = Date.now() - new Date(iso).getTime()
+    if (!isFinite(ms) || ms < 0) return 'just now'
+    const sec = Math.floor(ms / 1000)
+    if (sec < 30) return 'just now'
+    if (sec < 60) return `${sec}s ago`
+    const min = Math.floor(sec / 60)
+    if (min < 60) return `${min}m ago`
+    const hr = Math.floor(min / 60)
+    if (hr < 24) return `${hr}h ago`
+    return `${Math.floor(hr / 24)}d ago`
+  }
+
+  function priorityClass(p) {
+    if (p === 'urgent' || p === 'high') return 'high'
+    if (p === 'low') return 'low'
+    return 'medium'
+  }
+
+  function priorityLabel(p) {
+    if (p === 'urgent') return 'URGENT'
+    if (p === 'high') return 'HIGH'
+    if (p === 'low') return 'LOW'
+    return 'NORM'
+  }
+
+  async function renderPanelInbox(container) {
+    // Skip repaint mid-interaction to preserve typed reject feedback / button state.
+    if (inboxInteractionLocks.size > 0) return
+
+    let data
+    try {
+      const res = await fetch(`${BASE}/inbox`)
+      if (!res.ok) {
+        container.innerHTML = '<div style="color:#666;padding:20px;text-align:center">Inbox unavailable</div>'
+        return
+      }
+      data = await res.json()
+    } catch {
+      // Silent — next poll retries.
+      return
+    }
+
+    const messages = data.messages || []
+    const unread = data.unread || 0
+    syncInboxBadges(unread)
+    $('panel-title').textContent = `📬 Inbox · ${unread} unread`
+
+    if (messages.length === 0) {
+      container.innerHTML = '<div style="color:#666;padding:30px 20px;text-align:center;font-style:italic">No messages.</div>'
+      return
+    }
+
+    const renderProposalAgents = (list) =>
+      (list || []).map(a => `<li>${escapeHtml(a.name)} <span style="color:#888">(${escapeHtml(a.cli)} · ${escapeHtml(a.role)})</span></li>`).join('')
+
+    container.innerHTML = `
+      <div style="padding:8px;">
+        ${unread > 0 ? '<div class="inbox-header"><span class="inbox-unread-count">' + unread + ' unread</span><button class="inbox-read-all" id="inbox-read-all">Read all</button></div>' : ''}
+        ${messages.map(m => {
+          const isUnread = !m.readAt
+          const pCls = priorityClass(m.priority)
+          const isProposal = !!m.proposalId
+          const status = (m.proposalStatus || '').toLowerCase()
+          const proposalResolved = isProposal && status && status !== 'pending'
+          return `
+            <div class="inbox-card ${isUnread ? 'unread' : ''}" data-msg-id="${escapeHtml(m.id)}" data-proposal-id="${escapeHtml(m.proposalId || '')}">
+              <div class="inbox-card-top">
+                <span class="inbox-priority ${pCls}">${priorityLabel(m.priority)}</span>
+                <span class="inbox-sender">${escapeHtml(m.agentName)}</span>
+                <span class="inbox-time">${escapeHtml(relativeTime(m.createdAt))}</span>
+              </div>
+              <div class="inbox-body">${escapeHtml(m.message)}</div>
+              ${isProposal ? `
+                <div class="inbox-proposal">
+                  ${m.proposalSummary ? `<div class="inbox-proposal-summary">${escapeHtml(m.proposalSummary)}</div>` : ''}
+                  <div class="inbox-proposal-label">Proposed team</div>
+                  <ul class="inbox-proposal-agents">${renderProposalAgents(m.proposalAgents)}</ul>
+                  <div class="inbox-actions" data-state="${proposalResolved ? 'resolved' : 'pending'}">
+                    ${proposalResolved
+                      ? `<span class="inbox-action-resolved">Already ${escapeHtml(status)}</span>`
+                      : `<button class="inbox-action-btn approve" data-action="approve">Approve</button>
+                         <button class="inbox-action-btn reject" data-action="reject">Reject</button>`}
+                  </div>
+                </div>
+              ` : ''}
+              <div class="inbox-footer"></div>
+            </div>
+          `
+        }).join('')}
+      </div>
+    `
+
+    // Wire up tap-to-read for unread non-proposal cards (proposals stay
+    // visually unread until resolved; tapping the body marks them read too).
+    container.querySelectorAll('.inbox-card').forEach(card => {
+      const msgId = card.dataset.msgId
+      const proposalId = card.dataset.proposalId || undefined
+
+      card.addEventListener('click', async (e) => {
+        // Don't fire on button clicks or reject-input clicks.
+        if (e.target.closest('button') || e.target.closest('input')) return
+        if (!card.classList.contains('unread')) return
+        card.classList.remove('unread')
+        try {
+          await fetch(`${BASE}/inbox/${encodeURIComponent(msgId)}/read`, { method: 'POST' })
+        } catch { /* will retry on next poll via re-render */ }
+      })
+
+      const approveBtn = card.querySelector('.inbox-action-btn.approve')
+      const rejectBtn = card.querySelector('.inbox-action-btn.reject')
+      const actionsRow = card.querySelector('.inbox-actions')
+      const footer = card.querySelector('.inbox-footer')
+
+      if (approveBtn) {
+        approveBtn.addEventListener('click', async () => {
+          inboxInteractionLocks.add(msgId)
+          approveBtn.disabled = true
+          if (rejectBtn) rejectBtn.disabled = true
+          actionsRow.innerHTML = '<span class="inbox-action-resolved">Approved · spawning…</span>'
+          try {
+            const res = await fetch(`${BASE}/inbox/${encodeURIComponent(msgId)}/respond`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'approve', proposalId })
+            })
+            const result = await res.json().catch(() => ({}))
+            if (res.ok && result.success !== false) {
+              const n = result.spawned ?? (result.spawned === 0 ? 0 : '')
+              footer.textContent = `Spawned ${n} agent${n === 1 ? '' : 's'}`
+              card.classList.add('inbox-card-dim')
+              card.classList.remove('unread')
+            } else {
+              actionsRow.innerHTML = `<button class="inbox-action-btn approve" data-action="approve">Approve</button><button class="inbox-action-btn reject" data-action="reject">Reject</button>`
+              footer.innerHTML = `<span class="inbox-error">${escapeHtml(result.error || 'Approve failed')}</span>`
+            }
+          } catch {
+            actionsRow.innerHTML = `<button class="inbox-action-btn approve" data-action="approve">Approve</button><button class="inbox-action-btn reject" data-action="reject">Reject</button>`
+            footer.innerHTML = `<span class="inbox-error">Network error</span>`
+          } finally {
+            inboxInteractionLocks.delete(msgId)
+          }
+        })
+      }
+
+      if (rejectBtn) {
+        rejectBtn.addEventListener('click', () => {
+          inboxInteractionLocks.add(msgId)
+          actionsRow.innerHTML = `
+            <input type="text" class="inbox-reject-input" placeholder="Why? (optional)" />
+            <button class="inbox-action-btn reject-send">Send</button>
+            <button class="inbox-action-btn reject-cancel">×</button>
+          `
+          const input = actionsRow.querySelector('.inbox-reject-input')
+          const sendBtn = actionsRow.querySelector('.reject-send')
+          const cancelBtn = actionsRow.querySelector('.reject-cancel')
+          setTimeout(() => input.focus(), 50)
+
+          cancelBtn.addEventListener('click', () => {
+            actionsRow.innerHTML = `<button class="inbox-action-btn approve" data-action="approve">Approve</button><button class="inbox-action-btn reject" data-action="reject">Reject</button>`
+            inboxInteractionLocks.delete(msgId)
+            // Re-wire by re-rendering next poll; for snappier response trigger now:
+            renderPanelInbox(container)
+          })
+
+          const doSend = async () => {
+            const feedback = input.value
+            sendBtn.disabled = true
+            cancelBtn.disabled = true
+            input.disabled = true
+            try {
+              const res = await fetch(`${BASE}/inbox/${encodeURIComponent(msgId)}/respond`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'reject', feedback, proposalId })
+              })
+              const result = await res.json().catch(() => ({}))
+              if (res.ok && result.success !== false) {
+                actionsRow.innerHTML = '<span class="inbox-action-resolved">Rejected</span>'
+                footer.textContent = ''
+                card.classList.add('inbox-card-dim')
+                card.classList.remove('unread')
+              } else {
+                actionsRow.innerHTML = `<button class="inbox-action-btn approve" data-action="approve">Approve</button><button class="inbox-action-btn reject" data-action="reject">Reject</button>`
+                footer.innerHTML = `<span class="inbox-error">${escapeHtml(result.error || 'Reject failed')}</span>`
+              }
+            } catch {
+              actionsRow.innerHTML = `<button class="inbox-action-btn approve" data-action="approve">Approve</button><button class="inbox-action-btn reject" data-action="reject">Reject</button>`
+              footer.innerHTML = `<span class="inbox-error">Network error</span>`
+            } finally {
+              inboxInteractionLocks.delete(msgId)
+            }
+          }
+
+          sendBtn.addEventListener('click', doSend)
+          input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSend() })
+        })
+      }
+    })
+
+    const readAllBtn = document.getElementById('inbox-read-all')
+    if (readAllBtn) {
+      readAllBtn.addEventListener('click', async () => {
+        const unreadCards = container.querySelectorAll('.inbox-card.unread')
+        readAllBtn.disabled = true
+        const ids = []
+        unreadCards.forEach(c => { ids.push(c.dataset.msgId); c.classList.remove('unread') })
+        // No bulk endpoint on the remote server today — loop one-by-one
+        // (capped at ~20 cards by the policy of the inbox API).
+        await Promise.all(ids.map(id =>
+          fetch(`${BASE}/inbox/${encodeURIComponent(id)}/read`, { method: 'POST' }).catch(() => null)
+        ))
+      })
+    }
+  }
+
+  async function renderPanelTrollbox(container) {
+    let data
+    try {
+      const res = await fetch(`${BASE}/trollbox`)
+      if (res.status === 403) {
+        $('panel-title').textContent = '💬 Trollbox'
+        container.innerHTML = '<div class="trollbox-empty">Workshop session expired — re-enter the passcode.</div>'
+        return
+      }
+      if (!res.ok) {
+        $('panel-title').textContent = '💬 Trollbox'
+        container.innerHTML = '<div class="trollbox-empty">Trollbox unavailable</div>'
+        return
+      }
+      data = await res.json()
+    } catch {
+      return
+    }
+
+    if (!data || data.status === 'offline') {
+      $('panel-title').textContent = '💬 Trollbox (offline)'
+      container.innerHTML = `<div class="trollbox-empty">${escapeHtml(data && data.hint || 'Trollbox not available — desktop hasn\'t opened it yet.')}</div>`
+      return
+    }
+
+    const messages = data.messages || []
+    const onlineCount = data.onlineCount || 0
+    const pauseActive = data.pauseUntil && data.pauseUntil > Date.now()
+    const pauseReason = data.pauseReason || ''
+
+    // Pin-to-bottom: only auto-scroll if user is already near the bottom, so
+    // a user scrolled up to read history doesn't get yanked away.
+    const pinned = container.scrollHeight - container.scrollTop - container.clientHeight < 30
+    const wasEmpty = container.querySelectorAll('.trollbox-line').length === 0
+
+    const fmtTime = (ts) => {
+      const d = new Date(ts)
+      const hh = String(d.getHours()).padStart(2, '0')
+      const mm = String(d.getMinutes()).padStart(2, '0')
+      return `${hh}:${mm}`
+    }
+
+    $('panel-title').textContent = `💬 Trollbox · ${onlineCount} online · 🔴 read-only`
+
+    container.innerHTML = `
+      <div class="trollbox-list">
+        ${messages.length === 0
+          ? '<div class="trollbox-empty">No messages yet.</div>'
+          : messages.map(m => `
+              <div class="trollbox-line">
+                <span class="trollbox-nick">${escapeHtml(m.nick)}</span>
+                <span class="trollbox-ts">${escapeHtml(fmtTime(m.ts))}</span>
+                <span class="trollbox-text">${escapeHtml(m.text)}</span>
+              </div>
+            `).join('')}
+        ${pauseActive ? `<div class="trollbox-pause">─── paused — ${escapeHtml(pauseReason || 'no reason given')} ────</div>` : ''}
+      </div>
+    `
+
+    if (pinned || wasEmpty) {
+      container.scrollTop = container.scrollHeight
+    }
   }
 
   async function fetchDetailOutput() {
@@ -1171,6 +1491,15 @@
   document.querySelectorAll('.panel-item').forEach(btn => {
     btn.addEventListener('click', async () => {
       const panel = btn.dataset.panel
+      // Inbox + Trollbox render directly on the phone — no desktop toggle.
+      if (btn.dataset.mobileView === '1') {
+        $('workshop-panels').classList.add('hidden')
+        openPanelDetail({
+          panelType: panel,
+          title: panel === 'inbox' ? '📬 Inbox' : '💬 Trollbox'
+        })
+        return
+      }
       try {
         const res = await fetch(`${BASE}/workshop/panel/${encodeURIComponent(panel)}`, {
           method: 'POST',

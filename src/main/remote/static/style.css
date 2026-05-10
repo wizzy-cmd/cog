@@ -582,3 +582,152 @@ body {
 .panel-item:hover { border-color: #7ec4f5; }
 .panel-icon { font-size: 18px; flex-shrink: 0; }
 .panel-label { flex: 1; }
+
+/* Unread-count pills.
+ *
+ * Two surfaces share the same pill:
+ *   - on the main workshop button and the workshop panels button
+ *     (compact red pill anchored to the right of the label)
+ *   - inline next to "📬 Inbox" inside the panels menu
+ * Hidden until visible class is added (avoids reserving empty space). */
+.unread-pill {
+  display: none;
+  margin-left: 6px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 9px;
+  min-width: 16px;
+  text-align: center;
+  vertical-align: middle;
+}
+.unread-pill.visible { display: inline-block; }
+.panel-unread-pill {
+  display: none;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  min-width: 22px;
+  text-align: center;
+  margin-left: auto;
+}
+.panel-unread-pill.visible { display: inline-block; }
+
+/* Inbox panel ── unified list of orchestrator notifications + proposals. */
+.inbox-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 4px 12px; color: #ccc; font-weight: 600; font-size: 13px;
+}
+.inbox-unread-count { color: #888; font-weight: 400; font-size: 11px; flex: 1; }
+.inbox-read-all {
+  background: #2a2a3a; border: 1px solid #444; color: #8cc4ff;
+  font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer;
+  font-family: monospace;
+}
+.inbox-read-all:disabled { opacity: 0.5; cursor: default; }
+
+.inbox-card {
+  position: relative;
+  background: #1a1a1a; border: 1px solid #333; border-radius: 6px;
+  padding: 10px 12px 8px; margin-bottom: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.inbox-card.unread::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px; background: #3b82f6; border-radius: 6px 0 0 6px;
+}
+.inbox-card-dim { opacity: 0.55; }
+
+.inbox-card-top {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+  font-size: 11px;
+}
+.inbox-priority {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.5px;
+  padding: 2px 6px; border-radius: 3px; background: #333;
+}
+.inbox-priority.high { background: #3a0a0f; color: #f57e8e; }
+.inbox-priority.medium { background: #3a2f0a; color: #f5d76e; }
+.inbox-priority.low { background: #0a3a1a; color: #6ee7b7; }
+.inbox-sender { color: #8cc4ff; font-weight: 600; flex: 1; }
+.inbox-time { color: #555; font-size: 10px; white-space: nowrap; }
+
+.inbox-body {
+  color: #d0d0d0; font-size: 12px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+}
+
+.inbox-proposal {
+  margin-top: 8px; padding: 8px 10px; background: #14141c;
+  border: 1px solid #2a2a3a; border-radius: 4px;
+}
+.inbox-proposal-summary {
+  color: #ccc; font-size: 12px; margin-bottom: 6px; font-style: italic;
+}
+.inbox-proposal-label {
+  font-size: 10px; color: #888; text-transform: uppercase;
+  letter-spacing: 0.08em; margin-bottom: 4px;
+}
+.inbox-proposal-agents {
+  margin: 0 0 8px; padding-left: 18px;
+  color: #d0d0d0; font-size: 11px; line-height: 1.6;
+}
+.inbox-actions {
+  display: flex; gap: 6px; align-items: center;
+}
+.inbox-action-btn {
+  background: #1a2e1a; border: 1px solid #2a4a2a; color: #6ee7b7;
+  font-size: 11px; padding: 6px 12px; border-radius: 4px; cursor: pointer;
+  font-family: monospace; min-height: 32px;
+}
+.inbox-action-btn.reject {
+  background: #3a0a0f; border-color: #a02030; color: #f57e8e;
+}
+.inbox-action-btn.reject-send {
+  background: #3a0a0f; border-color: #a02030; color: #f57e8e;
+}
+.inbox-action-btn.reject-cancel {
+  background: #2a2a2a; border-color: #444; color: #888; padding: 6px 10px;
+}
+.inbox-action-btn:disabled { opacity: 0.5; cursor: default; }
+.inbox-action-resolved {
+  color: #888; font-size: 11px; font-style: italic;
+}
+.inbox-reject-input {
+  flex: 1; background: #0d0d0d; border: 1px solid #333; border-radius: 4px;
+  color: #e0e0e0; padding: 6px 8px; font-size: 12px; font-family: monospace;
+  min-height: 32px;
+}
+.inbox-reject-input:focus { border-color: #a02030; outline: none; }
+.inbox-footer { min-height: 0; }
+.inbox-footer:not(:empty) { margin-top: 6px; font-size: 11px; color: #888; }
+.inbox-error { color: #ef4444; }
+
+/* Trollbox panel ── read-only chat feed. Title and "N online · read-only"
+ * live in the existing panel chrome (panel-title); the body is a plain
+ * scrollable message list rendered into .panel-content. */
+.trollbox-list {
+  padding: 8px 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.trollbox-empty {
+  color: #666; padding: 30px 20px; text-align: center; font-style: italic;
+}
+.trollbox-line {
+  font-size: 12px; line-height: 1.5; margin-bottom: 4px;
+  word-break: break-word; color: #d0d0d0;
+}
+.trollbox-nick { color: #8cc4ff; font-weight: 600; margin-right: 6px; }
+.trollbox-ts { color: #555; font-size: 10px; margin-right: 6px; }
+.trollbox-text { color: #d0d0d0; }
+.trollbox-pause {
+  text-align: center; color: #f5d76e; font-size: 11px;
+  padding: 8px 0; margin: 6px 0;
+  border-top: 1px dashed #3a2f0a; border-bottom: 1px dashed #3a2f0a;
+  background: rgba(58, 47, 10, 0.15);
+}
