@@ -348,6 +348,14 @@ async function enableRemoteView(): Promise<void> {
         }
 
         handleSpawnAgent(fullConfig)
+        // Tell the renderer to open a window for this agent — the desktop
+        // canvas is the source of truth for layout, and remote-driven spawns
+        // bypass the renderer's normal handleSpawn (which would addWindow).
+        mainWindow?.webContents.send(IPC.AGENT_SPAWNED_REMOTE, {
+          agentId: fullConfig.id,
+          name: fullConfig.name,
+          cli: fullConfig.cli
+        })
         return { success: true, agentId: fullConfig.id }
       } catch (err) {
         return { success: false, error: (err as Error).message }
@@ -452,6 +460,12 @@ async function enableRemoteView(): Promise<void> {
         }
         try {
           handleSpawnAgent(config)
+          mainWindow?.webContents.send(IPC.AGENT_SPAWNED_REMOTE, {
+            agentId: config.id,
+            name: config.name,
+            cli: config.cli,
+            tabId: config.tabId
+          })
           spawned++
         } catch (err: any) {
           console.error(`[remote:proposal-approve] spawn failed for ${a.name}:`, err?.message)

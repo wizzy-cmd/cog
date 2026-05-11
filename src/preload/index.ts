@@ -32,6 +32,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(IPC.AGENT_STATE_UPDATE, handler)
     return () => ipcRenderer.removeListener(IPC.AGENT_STATE_UPDATE, handler)
   },
+  onAgentSpawnedRemote: (callback: (info: { agentId: string; name: string; cli: string; tabId?: string }) => void) => {
+    const handler = (_event: unknown, info: { agentId: string; name: string; cli: string; tabId?: string }) => callback(info)
+    ipcRenderer.on(IPC.AGENT_SPAWNED_REMOTE, handler)
+    return () => ipcRenderer.removeListener(IPC.AGENT_SPAWNED_REMOTE, handler)
+  },
   getPinboardTasks: (tabId?: string) => ipcRenderer.invoke(IPC.PINBOARD_GET_TASKS, tabId),
   clearCompletedTasks: () => ipcRenderer.invoke(IPC.PINBOARD_CLEAR_COMPLETED),
   onPinboardUpdate: (callback: (tasks: unknown[]) => void) => {

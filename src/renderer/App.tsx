@@ -272,6 +272,18 @@ export function App(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project])
 
+  // Open a window for any agent spawned outside the renderer flow (remote
+  // workshop spawn dialog, or proposal-approve from mobile). Without this
+  // the agent process exists and shows in the agent list but has no card
+  // on the desktop canvas.
+  useEffect(() => {
+    const off = window.electronAPI.onAgentSpawnedRemote((info) => {
+      const targetTab = info.tabId || activeTabId
+      addWindow(info.agentId, `${info.name} (${info.cli})`, getStatusColor('idle'), targetTab)
+    })
+    return () => off()
+  }, [addWindow, getStatusColor, activeTabId])
+
   // Track inbox unread count for the toolbar badge. Initial fetch + reactive
   // updates from the IPC events.
   useEffect(() => {

@@ -203,6 +203,10 @@ export const IPC = {
   WORKSHOP_PANEL_TOGGLE: 'workshop:panel-toggle',
   // Workshop: renderer → main layout mirror for /state
   WORKSHOP_LAYOUT_SYNC: 'workshop:layout-sync',
+  // Agent spawned outside the renderer flow (remote-view spawn dialog or
+  // proposal approve from mobile) — tells the renderer to open a window
+  // for it so the agent lands on the canvas instead of being invisible.
+  AGENT_SPAWNED_REMOTE: 'agent:spawned-remote',
   // Workspace themes
   WORKSPACE_THEME_GET_ACTIVE: 'workspace-theme:get-active',
   WORKSPACE_THEME_SET_ACTIVE: 'workspace-theme:set-active',
