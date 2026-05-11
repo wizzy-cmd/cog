@@ -170,7 +170,10 @@ export class RemoteServer {
       )
     })
 
-    this.app.use(express.json({ limit: '4kb' }))
+    // 64kb leaves headroom for /workshop/spawn ceoNotes (free-form textarea
+    // that easily exceeds a few kb). Endpoint is already token-gated, per-IP
+    // rate limited, and workshop-PIN protected — small DoS surface.
+    this.app.use(express.json({ limit: '64kb' }))
     this.app.use('/r/:token', this.rateLimitMiddleware.bind(this))
     this.app.use('/r/:token', this.authMiddleware.bind(this))
     this.app.use('/r/:token', express.static(this.staticDir, { index: false }))
