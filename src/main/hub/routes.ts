@@ -328,6 +328,27 @@ export function createRoutes(
         return
       }
       const proposal = proposalsChannel.createProposal(proposedBy, summary, agents, tabId)
+      // Mirror the proposal into the inbox so it surfaces on mobile remote
+      // view (which reads /r/:token/inbox). The desktop renderer also opens
+      // its own modal via PROPOSAL_ADDED — both paths coexist. The tag
+      // `proposal:<id>` is the wire the inbox-read layer uses to enrich the
+      // message with proposalSummary / proposalAgents / proposalStatus.
+      if (inboxChannel) {
+        try {
+          const agentCount = Array.isArray(agents) ? agents.length : 0
+          const inboxText = `Team proposal: ${summary || `${agentCount} agent${agentCount === 1 ? '' : 's'}`}`
+          inboxChannel.postMessage(
+            agent.id,
+            proposedBy,
+            inboxText,
+            'high',
+            [`proposal:${proposal.id}`],
+            tabId
+          )
+        } catch (err: any) {
+          console.error('[hub:propose] failed to mirror proposal to inbox:', err?.message)
+        }
+      }
       res.json(proposal)
     } catch (err: any) {
       res.status(400).json({ error: err?.message || 'Invalid proposal' })
