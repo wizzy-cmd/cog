@@ -42,8 +42,17 @@
   }
 
   function showDisconnected() {
+    // Tear down any open workshop overlays before showing the disconnected screen
+    // so a z-index:20 panel doesn't sit on top of the overlay (z-index:1000).
+    $('workshop-view').classList.add('hidden')
+    $('workshop-detail').classList.add('hidden')
+    $('workshop-panel').classList.add('hidden')
+    $('workshop-panels').classList.add('hidden')
+    $('workshop-spawn').classList.add('hidden')
     $('disconnected-overlay').classList.remove('hidden')
     if (pollHandle) { clearInterval(pollHandle); pollHandle = null }
+    if (workshopPollHandle) { clearInterval(workshopPollHandle); workshopPollHandle = null }
+    if (detailPollHandle) { clearInterval(detailPollHandle); detailPollHandle = null }
     if (panelPollHandle) { clearInterval(panelPollHandle); panelPollHandle = null }
   }
 
@@ -440,6 +449,9 @@
   let currentDetailAgent = null
   let detailPollHandle = null
   let workshopTouchState = { zoom: 0.4, panX: 0, panY: 0 }
+  // Track where openPanelDetail was invoked from so closePanelDetail can
+  // navigate back to the right view ('canvas' or 'panels-menu').
+  let panelOpenedFrom = 'canvas'
 
   // Fire-and-forget window position/size push to server during drag/resize
   function pushWindowUpdate(windowId, update) {
@@ -520,8 +532,15 @@
 
   function exitWorkshop() {
     workshopActive = false
+    // Hide ALL full-screen workshop overlays — including panel/panels/spawn that
+    // may be open if the session expired (403) while the user was inside one.
+    // Without these, the z-index:20 fixed overlays cover the main view (z-index:10
+    // header + no-z-index content), causing every hub/panel-menu tap to be blocked.
     $('workshop-view').classList.add('hidden')
     $('workshop-detail').classList.add('hidden')
+    $('workshop-panel').classList.add('hidden')
+    $('workshop-panels').classList.add('hidden')
+    $('workshop-spawn').classList.add('hidden')
     $('content').classList.remove('hidden')
     $('send-bar').classList.remove('hidden')
     $('header').classList.remove('hidden')
@@ -529,6 +548,7 @@
     if (detailPollHandle) { clearInterval(detailPollHandle); detailPollHandle = null }
     if (panelPollHandle) { clearInterval(panelPollHandle); panelPollHandle = null }
     currentDetailAgent = null
+    panelOpenedFrom = 'canvas'
   }
 
   $('workshop-back').addEventListener('click', exitWorkshop)
@@ -838,7 +858,10 @@
   }
 
   // Panel detail views (pinboard, info, inbox, trollbox)
-  function openPanelDetail(win) {
+  // calledFrom: 'canvas' (default, from a ws-card tap) or 'panels-menu' (from
+  // the ☰ Panels menu). closePanelDetail uses this to navigate back correctly.
+  function openPanelDetail(win, calledFrom) {
+    panelOpenedFrom = calledFrom || 'canvas'
     const panelType = (win.panelType || win.title || '').toLowerCase()
     $('workshop-view').classList.add('hidden')
     $('workshop-panel').classList.remove('hidden')
@@ -866,7 +889,14 @@
 
   function closePanelDetail() {
     $('workshop-panel').classList.add('hidden')
-    $('workshop-view').classList.remove('hidden')
+    if (panelOpenedFrom === 'panels-menu') {
+      // User navigated here from the ☰ Panels menu — return to the panels menu,
+      // not the canvas (which would skip a navigation level and confuse the user).
+      $('workshop-panels').classList.remove('hidden')
+    } else {
+      $('workshop-view').classList.remove('hidden')
+    }
+    panelOpenedFrom = 'canvas'
     if (panelPollHandle) { clearInterval(panelPollHandle); panelPollHandle = null }
   }
 
@@ -1497,7 +1527,7 @@
         openPanelDetail({
           panelType: panel,
           title: panel === 'inbox' ? '📬 Inbox' : '💬 Trollbox'
-        })
+        }, 'panels-menu')
         return
       }
       try {
