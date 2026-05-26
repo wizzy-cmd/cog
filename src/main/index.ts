@@ -11,6 +11,7 @@ import { ProposalsStore } from './db/proposals-store'
 import { meetsThreshold } from './hub/inbox-channel'
 import { createHubServer, type HubServer } from './hub/server'
 import { spawnAgentPty, writeToPty, resizePty, killPty, type ManagedPty } from './shell/pty-manager'
+import { SpawnGovernor, defaultSpawnGovernorConfig } from './spawn-governor'
 import { buildCliLaunchCommands as buildCliLaunchCommandsForConfig } from './cli-launch'
 import { writeAgentMcpConfig, cleanupConfig } from './mcp/config-writer'
 import { savePreset, loadPreset, listPresets, deletePreset, setPresetsDir } from './presets/preset-manager'
@@ -53,6 +54,16 @@ let currentInboxStore: InboxStore | null = null
 let currentProposalsStore: ProposalsStore | null = null
 let promptScheduler: PromptScheduler | null = null
 const agents = new Map<string, ManagedPty>()
+// Serializes team spawns so an approved burst can't fire concurrently and crash
+// the app. Gates on live agent count + free RAM; staggers spawns; never drops one.
+const spawnGovernor = new SpawnGovernor(
+  defaultSpawnGovernorConfig(),
+  () => agents.size,
+  (info) =>
+    console.warn(
+      `[spawn-governor] throttled: ${info.reason} — live=${info.liveAgents}, freeMB=${info.freeMemMb}, queued=${info.queued}`
+    )
+)
 const hasReceivedInitialPrompt = new Set<string>()
 const initialPrompts = new Map<string, string>()
 const manualKills = new Set<string>() // Track intentional kills to skip auto-reconnect
@@ -459,7 +470,9 @@ async function enableRemoteView(): Promise<void> {
           theme: a.theme
         }
         try {
-          handleSpawnAgent(config)
+          // Route through the governor so a multi-agent approval staggers +
+          // capacity-gates instead of bursting (crash prevention).
+          await spawnGovernor.run(() => handleSpawnAgent(config))
           mainWindow?.webContents.send(IPC.AGENT_SPAWNED_REMOTE, {
             agentId: config.id,
             name: config.name,
@@ -2012,7 +2025,9 @@ function setupIPC(): void {
         theme: a.theme
       }
       try {
-        const result = handleSpawnAgent(config)
+        // Route through the governor so a multi-agent approval staggers +
+        // capacity-gates instead of bursting (crash prevention).
+        const result = await spawnGovernor.run(() => handleSpawnAgent(config))
         spawned.push({ agentId: result.id, name: config.name, gridIndex: i })
       } catch (err: any) {
         console.error(`[proposals:approve] spawn failed for ${a.name}:`, err?.message)
