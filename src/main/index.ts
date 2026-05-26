@@ -131,6 +131,36 @@ function getVisibleAgents() {
   return hub.registry.list().filter(a => a.name !== 'user')
 }
 
+// Crash-safe wrapper around mainWindow.webContents.send.
+//
+// PTY data/exit/status callbacks fire asynchronously and can outlive the
+// window: app quit, a renderer crash, or a dev-mode HMR reload destroys the
+// webContents while node-pty keeps streaming buffered output. Calling .send()
+// on a destroyed webContents throws "TypeError: Object has been destroyed" —
+// and because that throw originates inside a node-pty callback (off any
+// try/catch), it becomes an UNCAUGHT exception that kills the entire main
+// process and takes the whole orchestrator + every live agent down with it.
+// Optional chaining alone is not enough: mainWindow can be non-null while its
+// webContents is already destroyed. Guard both.
+function safeSend(channel: string, ...args: unknown[]): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const wc = mainWindow.webContents
+  if (!wc || wc.isDestroyed()) return
+  wc.send(channel, ...args)
+}
+
+// Last-resort safety net for a long-running orchestrator that must survive
+// stray throws in async/event callbacks (node-pty, timers, IPC). Without this,
+// Electron's default handler shows a fatal dialog and exits on any uncaught
+// error. Log loudly instead of dying; the targeted guards (e.g. safeSend) are
+// still the real fix — this only prevents a single bug from killing the fleet.
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException] main process kept alive:', err)
+})
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection] main process kept alive:', reason)
+})
+
 function getSettingsPath(): string {
   return path.join(app.getPath('userData'), 'settings.json')
 }
@@ -880,12 +910,12 @@ function spawnPtyAndWire(
     mcpConfigPath,
     extraEnv: mcpEnv,
     onData: (data) => {
-      mainWindow.webContents.send(IPC.PTY_OUTPUT, config.id, data)
+      safeSend(IPC.PTY_OUTPUT, config.id, data)
     },
     onExit: (exitCode) => {
       hub.registry.updateStatus(config.name, 'disconnected')
-      mainWindow.webContents.send(IPC.PTY_EXIT, config.id, exitCode)
-      mainWindow.webContents.send(IPC.AGENT_STATE_UPDATE, getVisibleAgents())
+      safeSend(IPC.PTY_EXIT, config.id, exitCode)
+      safeSend(IPC.AGENT_STATE_UPDATE, getVisibleAgents())
       if (managed.mcpConfigPath) cleanupConfig(managed.mcpConfigPath)
 
       if (!manualKills.has(config.id) && config.cli !== 'terminal') {
@@ -903,7 +933,7 @@ function spawnPtyAndWire(
     },
     onStatusChange: (status) => {
       hub.registry.updateStatus(config.name, status)
-      mainWindow.webContents.send(IPC.AGENT_STATE_UPDATE, getVisibleAgents())
+      safeSend(IPC.AGENT_STATE_UPDATE, getVisibleAgents())
 
       // Status-driven prompt injection: inject when CLI first reaches prompt
       if (status === 'active' && !hasReceivedInitialPrompt.has(config.id)) {
@@ -922,7 +952,7 @@ function spawnPtyAndWire(
   })
 
   agents.set(config.id, managed)
-  mainWindow.webContents.send(IPC.AGENT_STATE_UPDATE, getVisibleAgents())
+  safeSend(IPC.AGENT_STATE_UPDATE, getVisibleAgents())
 
   const cmds = buildCliLaunchCommands(config, mcpConfigPath, mcpServerPath, hub.port, hub.secret)
   if (cmds) {
