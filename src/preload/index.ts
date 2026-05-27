@@ -82,8 +82,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   inboxMarkRead: (id: string) => ipcRenderer.invoke(IPC.INBOX_MARK_READ, id),
   inboxMarkAllRead: () => ipcRenderer.invoke(IPC.INBOX_MARK_ALL_READ),
   inboxDelete: (id: string) => ipcRenderer.invoke(IPC.INBOX_DELETE, id),
-  inboxReply: (agentName: string, message: string) =>
-    ipcRenderer.invoke(IPC.INBOX_REPLY, { agentName, message }),
+  inboxReply: (agentName: string, message: string, inReplyTo?: string) =>
+    ipcRenderer.invoke(IPC.INBOX_REPLY, { agentName, message, inReplyTo }),
   inboxGetNotifyThreshold: () => ipcRenderer.invoke(IPC.INBOX_GET_NOTIFY_THRESHOLD),
   inboxSetNotifyThreshold: (t: string) => ipcRenderer.invoke(IPC.INBOX_SET_NOTIFY_THRESHOLD, t),
   onInboxMessageAdded: (callback: (msgs: unknown[]) => void) => {

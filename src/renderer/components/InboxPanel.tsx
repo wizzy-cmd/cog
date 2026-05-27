@@ -159,9 +159,9 @@ export function InboxPanel(): React.ReactElement {
     setReplying(id)
     setReplyText('')
   }
-  const handleSendReply = async (agentName: string) => {
+  const handleSendReply = async (agentName: string, inReplyTo?: string) => {
     if (!replyText.trim()) return
-    const result = await window.electronAPI.inboxReply(agentName, replyText.trim())
+    const result = await window.electronAPI.inboxReply(agentName, replyText.trim(), inReplyTo)
     if (result.success) {
       setReplying(null)
       setReplyText('')
@@ -251,7 +251,7 @@ export function InboxPanel(): React.ReactElement {
                       Cancel
                     </button>
                     <button
-                      onClick={() => handleSendReply(m.agentName)}
+                      onClick={() => handleSendReply(m.agentName, m.message)}
                       disabled={!replyText.trim()}
                       style={{
                         ...buttonStyle,

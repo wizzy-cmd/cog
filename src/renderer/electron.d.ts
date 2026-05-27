@@ -25,7 +25,7 @@ declare global {
       inboxMarkRead: (id: string) => Promise<InboxMessage | null>
       inboxMarkAllRead: () => Promise<number>
       inboxDelete: (id: string) => Promise<boolean>
-      inboxReply: (agentName: string, message: string) => Promise<{ success: boolean; error?: string }>
+      inboxReply: (agentName: string, message: string, inReplyTo?: string) => Promise<{ success: boolean; error?: string }>
       inboxGetNotifyThreshold: () => Promise<NotificationThreshold>
       inboxSetNotifyThreshold: (t: NotificationThreshold) => Promise<{ success: boolean; error?: string }>
       onInboxMessageAdded: (callback: (msgs: InboxMessage[]) => void) => () => void
