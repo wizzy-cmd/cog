@@ -1941,12 +1941,28 @@ function setupIPC(): void {
   ipcMain.handle(IPC.INBOX_DELETE, (_event, id: string) => {
     return hub?.inboxChannel.deleteMessage(id) ?? false
   })
-  ipcMain.handle(IPC.INBOX_REPLY, (_event, payload: { agentName: string; message: string }) => {
+  ipcMain.handle(IPC.INBOX_REPLY, (_event, payload: { agentName: string; message: string; inReplyTo?: string }) => {
     if (!hub || !payload?.agentName || !payload?.message) return { success: false, error: 'Invalid reply' }
-    // Send a regular hub message from "user" to the orchestrator. Reuses the
-    // same path the renderer already uses for HUB_SEND_MESSAGE.
     try {
-      hub.messages.send('user', payload.agentName, payload.message)
+      // Route back to the agent that posted the inbox message. If it has since
+      // left the registry (cycled/renamed), fall back to an orchestrator so the
+      // owner's reply never lands in a void.
+      let target = payload.agentName
+      if (!hub.registry.get(target)) {
+        const orchestrator = hub.registry.list().find(a => a.role === 'orchestrator')
+        if (!orchestrator) {
+          return { success: false, error: `Agent '${target}' not found and no orchestrator available` }
+        }
+        target = orchestrator.name
+      }
+      // Quote the inbox message being replied to so the agent has context.
+      const body = payload.inReplyTo
+        ? `↩️ Re your inbox message: "${payload.inReplyTo.slice(0, 200)}${payload.inReplyTo.length > 200 ? '…' : ''}"\n\n${payload.message}`
+        : payload.message
+      // skipRateLimit=true mirrors the proven HUB_SEND_MESSAGE path; surface real
+      // send failures to the UI instead of silently swallowing them.
+      const result = hub.messages.send('user', target, body, true)
+      if (result.status === 'error') return { success: false, error: result.detail }
       return { success: true }
     } catch (err: any) {
       return { success: false, error: err?.message || 'Send failed' }
